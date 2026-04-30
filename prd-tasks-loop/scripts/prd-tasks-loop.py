@@ -85,7 +85,7 @@ def fail(message: str) -> NoReturn:
 
 
 def status_line(message: str) -> None:
-    print(message)
+    print(f"{iso_now()} {message}")
 
 
 def debug(enabled: bool, message: str) -> None:
