@@ -49,6 +49,8 @@ When the user needs a PRD:
 
 - write or update the PRD directly in `docs/prd/`
 - keep the document explicit, implementation-ready, and easy to validate
+- prefer a TDD-first plan for every story: define the failing test before the implementation step
+- add `Quality Gates:` in `## Execution Settings` whenever the project has meaningful checks such as lint, typecheck, or targeted validation commands
 - follow the canonical format in [references/PRD_FORMAT.md](references/PRD_FORMAT.md)
 
 When the user needs execution:
@@ -137,7 +139,7 @@ Quality Gates:
 Rules:
 
 - CLI flags override `Execution Settings`
-- `Quality Gates:` can be empty
+- `Quality Gates:` should be filled whenever the codebase has meaningful automated checks
 - if the section is missing, the runner uses only CLI-provided runtime settings
 
 ## Routing Rules

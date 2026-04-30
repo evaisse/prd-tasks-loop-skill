@@ -199,6 +199,7 @@ class PrdTasksLoopTests(unittest.TestCase):
             str(second),
             allow_failure=True,
         )
+        self.assertIn("1/2 2026-04-30-104512-first-fails.md", result.stdout)
         self.assertIn("Failed after retries", result.stdout)
         self.assertTrue(first.with_suffix(".json.log").exists())
         self.assertFalse(second.with_suffix(".json.log").exists())

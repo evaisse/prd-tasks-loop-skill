@@ -438,7 +438,16 @@ def compute_backoff_seconds(attempt_index: int) -> float:
     return raw * scale
 
 
-def run_one_prd(args: argparse.Namespace, prd: PrdData, preset: str, agent_command: str, timeout_seconds: int) -> bool:
+def run_one_prd(
+    args: argparse.Namespace,
+    prd: PrdData,
+    preset: str,
+    agent_command: str,
+    timeout_seconds: int,
+    index: int,
+    total: int,
+) -> bool:
+    status_line(f"{index}/{total} {prd.path.name}")
     if prd.errors:
         status_line(f"PRD validation failed: {prd.path}")
         for error in prd.errors:
@@ -577,9 +586,10 @@ def main(argv: list[str] | None = None) -> int:
         fail(f"Invalid timeout: {args.timeout}")
 
     preset, agent_command = choose_agent_command(args)
-    for prd_path in prd_paths:
+    total = len(prd_paths)
+    for index, prd_path in enumerate(prd_paths, start=1):
         prd = parse_prd(prd_path)
-        if not run_one_prd(args, prd, preset, agent_command, timeout_seconds):
+        if not run_one_prd(args, prd, preset, agent_command, timeout_seconds, index, total):
             return 1
     return 0
 

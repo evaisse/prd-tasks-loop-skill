@@ -50,6 +50,12 @@ Quality Gates:
 
 CLI flags always override these settings.
 
+Authoring guidance:
+
+- add `Quality Gates:` whenever the target codebase has useful automated checks
+- prefer project-relevant gates such as lint, typecheck, targeted tests, or framework validation commands
+- leave it empty only when no meaningful automated gate exists yet
+
 ## User Story Template
 
 Each story must use this shape:
@@ -76,6 +82,7 @@ Validation rules:
 - every story must define all required fields
 - `Acceptance Criteria` must contain at least one bullet
 - `TDD Plan` must contain both `- Test:` and `- Implementation:`
+- `TDD Plan` should be written in TDD-first order: the test step should describe the failing test to add before implementation
 
 ## Canonical Example
 
