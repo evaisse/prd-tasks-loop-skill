@@ -1,0 +1,42 @@
+name: Real agent E2E
+
+on:
+  pull_request:
+
+jobs:
+  real-e2e:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        agent:
+          - codex
+          - gemini
+          - opencode
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_MODEL: meta-llama/llama-3.1-8b-instruct:free
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Print tool versions
+        run: |
+          node --version
+          npm --version
+          npx --version
+          python3 --version
+
+      - name: Run real CLI E2E
+        run: python3 tests/e2e-real/run_real_agent_e2e.py ${{ matrix.agent }}

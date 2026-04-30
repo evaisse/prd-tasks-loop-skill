@@ -125,4 +125,52 @@ Run:
 
 ```bash
 python3 tests/test_prd_tasks_loop.py
+python3 tests/agent-presets/assert_agent_preset.py codex
+python3 tests/agent-presets/assert_agent_preset.py gemini
+python3 tests/agent-presets/assert_agent_preset.py opencode
 ```
+
+The GitHub Actions workflow `.github/workflows/agent-presets.yml` runs these preset contract checks on pull requests only with `ubuntu-22.04`.
+
+## Real agent E2E on GitHub Actions
+
+The workflow `.github/workflows/real-agent-e2e.yml` runs a pull-request-only blocking matrix on `ubuntu-22.04` for these real CLI entrypoints:
+
+- `codex`
+- `@google/gemini-cli`
+- `opencode`
+
+The workflow uses `npx` and configures OpenRouter through environment variables.
+
+Required repository secret:
+
+```text
+OPENROUTER_API_KEY
+```
+
+Default model configured in the workflow:
+
+```text
+meta-llama/llama-3.1-8b-instruct:free
+```
+
+The real E2E smoke test copies `tests/e2e-real/fixture/` into a temporary Git repository, runs `prd-tasks-loop/scripts/prd-tasks-loop.py`, and expects the agent to:
+
+- create `project/result.txt` with exactly `STATUS=done`
+- check the active story acceptance criteria in the PRD
+- create one Git commit for the story
+- allow the runner to clean up the runtime log files
+
+You can run the harness locally if you already have a valid `OPENROUTER_API_KEY` in your environment:
+
+```bash
+OPENROUTER_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py codex
+OPENROUTER_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py gemini
+OPENROUTER_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py opencode
+```
+
+Notes:
+
+- this is a true remote E2E smoke test, so it depends on CLI package availability, provider compatibility, and OpenRouter model availability
+- the configured `:free` model may change or disappear on OpenRouter over time
+- if one agent CLI requires different provider variables than the current OpenAI-compatible setup, the workflow will need a follow-up adjustment
