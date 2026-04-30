@@ -1,3 +1,3 @@
 .*
-prd-tasks-loop/docs/prd/*.json.log
-prd-tasks-loop/docs/prd/*.progress.log
+!.github
+*.log
