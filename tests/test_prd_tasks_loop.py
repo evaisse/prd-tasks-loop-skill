@@ -122,8 +122,25 @@ class PrdTasksLoopTests(unittest.TestCase):
         write_bad_prd(workspace, "wrong-name.md")
         result = self.run_script(workspace, allow_failure=True)
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Error: No PRD files found.", result.stderr)
+
+    def test_explicit_invalid_prd_still_fails_validation(self) -> None:
+        workspace = self.make_workspace()
+        prd = write_bad_prd(workspace, "wrong-name.md")
+        result = self.run_script(workspace, str(prd), allow_failure=True)
+        self.assertNotEqual(result.returncode, 0)
         self.assertIn("Invalid PRD filename `wrong-name.md`", result.stdout)
         self.assertIn("Missing required section `## Goals`.", result.stdout)
+
+    def test_auto_discovery_skips_non_canonical_prd_names(self) -> None:
+        workspace = self.make_workspace()
+        valid = write_prd(workspace, "2026-04-30-104512-valid.md", "Valid")
+        write_bad_prd(workspace, "prd-agent-attention-plan-mode.md")
+        write_agent(workspace, "success-agent", "#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n")
+        result = self.run_script(workspace, "--agent=success-agent")
+        self.assertIn("1/1 2026-04-30-104512-valid.md", result.stdout)
+        self.assertNotIn("prd-agent-attention-plan-mode.md", result.stdout)
+        self.assertTrue(valid.with_suffix(".json.log").exists())
 
     def test_run_creates_state_logs_and_parses_dependencies(self) -> None:
         workspace = self.make_workspace()

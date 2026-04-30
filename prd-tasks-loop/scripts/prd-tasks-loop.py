@@ -104,7 +104,11 @@ def parse_duration_to_seconds(raw: str) -> int:
 def discover_prds() -> list[Path]:
     if not DEFAULT_PRD_DIR.is_dir():
         return []
-    return sorted(DEFAULT_PRD_DIR.glob("*.md"))
+    return sorted(
+        path
+        for path in DEFAULT_PRD_DIR.glob("*.md")
+        if FILENAME_RE.fullmatch(path.stem)
+    )
 
 
 def resolve_prd_list(values: list[str]) -> list[Path]:
