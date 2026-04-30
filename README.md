@@ -81,10 +81,20 @@ python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
   docs/prd/2026-04-30-121500-billing.md
 ```
 
+Run on a specific Git branch:
+
+```bash
+python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
+  --branch=feature/prd-loop \
+  --agent=codex \
+  docs/prd/2026-04-30-104512-jwt-authentication.md
+```
+
 ## Supported Flags
 
 - `<prd1> <prd2> ...`
 - `--agent=<preset-or-command>`
+- `--branch=<git-branch>`
 - `--retries <n>`
 - `--timeout <duration>`
 - `--verbose`
@@ -97,7 +107,12 @@ python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
 - Failed stories use exponential backoff before retrying.
 - `--agent=codex`, `--agent=amp`, `--agent=claude-code`, `--agent=gemini`, and `--agent=opencode` map to built-in commands.
 - Any other `--agent=...` value is executed as a custom stdin-reading command.
+- Before starting, the runner shows the PRDs that will be processed and asks for confirmation.
+- In a Git repository, the startup prompt shows the current branch and optional `--branch=...` target.
+- Outside a Git repository, the startup prompt only asks for confirmation that the loop should run without Git support.
+- When the worktree starts clean inside a Git repository, a successful story is expected to produce a new commit.
 - Agents should never modify `.json.log` or `.progress.log` directly.
+- When a PRD is fully completed, its `.json.log` and `.progress.log` files are removed automatically.
 
 ## Credits
 

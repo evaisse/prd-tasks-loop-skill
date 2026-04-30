@@ -80,7 +80,7 @@ Validation rules:
 
 - story IDs must be unique
 - every story must define all required fields
-- `Acceptance Criteria` must contain at least one bullet
+- `Acceptance Criteria` must contain markdown checkbox bullets such as `- [ ] ...`
 - `TDD Plan` must contain both `- Test:` and `- Implementation:`
 - `TDD Plan` should be written in TDD-first order: the test step should describe the failing test to add before implementation
 

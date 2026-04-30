@@ -176,9 +176,9 @@ def parse_story(body: str, story_id: str, story_title: str, errors: list[str]) -
 
     acceptance_match = re.search(r"(?ms)^\*\*Acceptance Criteria:\*\*\s*(.+?)(?:\n\s*\n\*\*|\Z)", body)
     acceptance_block = acceptance_match.group(1).strip() if acceptance_match else ""
-    acceptance = [line.strip() for line in acceptance_block.splitlines() if re.match(r"^\s*-\s+", line)]
+    acceptance = [line.strip() for line in acceptance_block.splitlines() if re.match(r"^\s*-\s+\[[ xX]\]\s+", line)]
     if not acceptance:
-        errors.append(f"{story_id} must define at least one acceptance criterion.")
+        errors.append(f"{story_id} must define at least one acceptance criterion checkbox.")
 
     tdd_match = re.search(r"(?ms)^\*\*TDD Plan:\*\*\s*(.+?)(?:\n\s*\n\*\*|\Z)", body)
     tdd_block = tdd_match.group(1).strip() if tdd_match else ""
@@ -411,6 +411,132 @@ def run_agent_command(command: str, prompt: str, timeout_seconds: int) -> tuple[
         return 124, f"{stdout}{stderr}\n[runner] timeout exceeded\n"
 
 
+def git_repo_root(cwd: Path) -> Path | None:
+    if shutil.which("git") is None:
+        return None
+    probe = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+    )
+    if probe.returncode != 0:
+        return None
+    return Path(probe.stdout.strip())
+
+
+def git_head_commit(cwd: Path) -> str | None:
+    repo_root = git_repo_root(cwd)
+    if repo_root is None:
+        return None
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    )
+    return head.stdout.strip() if head.returncode == 0 else None
+
+
+def git_worktree_clean(cwd: Path, ignored_paths: list[Path] | None = None) -> bool | None:
+    repo_root = git_repo_root(cwd)
+    if repo_root is None:
+        return None
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    )
+    if status.returncode != 0:
+        return None
+    ignored = {str(path.resolve()) for path in (ignored_paths or [])}
+    for line in status.stdout.splitlines():
+        if not line.strip():
+            continue
+        relative = line[3:].strip()
+        candidate = (repo_root / relative).resolve()
+        if str(candidate) in ignored:
+            continue
+        return False
+    return True
+
+
+def git_current_branch(cwd: Path) -> str | None:
+    repo_root = git_repo_root(cwd)
+    if repo_root is None:
+        return None
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    )
+    if branch.returncode != 0:
+        return None
+    value = branch.stdout.strip()
+    return value or None
+
+
+def git_checkout_branch(cwd: Path, branch_name: str) -> None:
+    repo_root = git_repo_root(cwd)
+    if repo_root is None:
+        fail("--branch requires a Git repository.")
+    checkout = subprocess.run(
+        ["git", "checkout", branch_name],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    )
+    if checkout.returncode != 0:
+        stderr = checkout.stderr.strip() or checkout.stdout.strip() or "git checkout failed"
+        fail(f"Unable to checkout branch `{branch_name}`: {stderr}")
+
+
+def cleanup_runtime_files(prd: PrdData) -> None:
+    for path in (state_path_for(prd.path), progress_path_for(prd.path)):
+        if path.exists():
+            path.unlink()
+
+
+def prompt_run_confirmation(args: argparse.Namespace, prd_paths: list[Path]) -> None:
+    if os.environ.get("PRD_TASKS_LOOP_AUTO_CONFIRM") == "1":
+        return
+
+    repo_root = git_repo_root(Path.cwd())
+    print("About to start PRD loop:")
+    if repo_root is None:
+        if args.branch:
+            fail("--branch requires a Git repository.")
+        print("- Workspace is not inside a Git repository.")
+        print("- The loop will run without branch management or commit verification.")
+    else:
+        current_branch = git_current_branch(repo_root) or "(detached HEAD)"
+        target_branch = args.branch or current_branch
+        print(f"- Git repository: {repo_root}")
+        print(f"- Current branch: {current_branch}")
+        print(f"- Target branch: {target_branch}")
+    print(f"- Agent: {args.agent}")
+    print(f"- Retries: {args.retries}")
+    print(f"- Timeout: {args.timeout}")
+    print(f"- PRDs to execute: {len(prd_paths)}")
+    for index, prd_path in enumerate(prd_paths, start=1):
+        print(f"  {index}. {prd_path}")
+
+    prompt = "Continue outside a Git repository? [y/N]: " if repo_root is None else "Continue and start the loop? [y/N]: "
+    try:
+        answer = input(prompt).strip().lower()
+    except EOFError:
+        fail("Confirmation required to start the loop.")
+    if answer not in {"y", "yes"}:
+        fail("Loop aborted by user.")
+
+    if repo_root is not None and args.branch:
+        current_branch = git_current_branch(repo_root)
+        if current_branch != args.branch:
+            git_checkout_branch(repo_root, args.branch)
+
+
 def select_next_story(prd: PrdData, state: dict) -> Story | None:
     completed = set(state.get("completed_story_ids", []))
     if len(completed) == len(prd.stories):
@@ -440,6 +566,47 @@ def compute_backoff_seconds(attempt_index: int) -> float:
     scale = float(os.environ.get("PRD_TASKS_LOOP_BACKOFF_SCALE", "1"))
     raw = min(DEFAULT_BACKOFF_BASE_SECONDS * (2 ** max(attempt_index - 1, 0)), DEFAULT_BACKOFF_MAX_SECONDS)
     return raw * scale
+
+
+def extract_story_block(text: str, story_id: str) -> str:
+    matches = list(STORY_RE.finditer(text))
+    for index, match in enumerate(matches):
+        current_id = match.group(1).strip()
+        if current_id != story_id:
+            continue
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        return text[start:end]
+    return ""
+
+
+def story_checkbox_counts(text: str, story_id: str) -> tuple[int, int]:
+    block = extract_story_block(text, story_id)
+    if not block:
+        return 0, 0
+    total = 0
+    checked = 0
+    for line in block.splitlines():
+        match = re.match(r"^\s*-\s+\[([ xX])\]\s+", line)
+        if not match:
+            continue
+        total += 1
+        if match.group(1).lower() == "x":
+            checked += 1
+    return total, checked
+
+
+def verify_story_progress(prd_path: Path, before_text: str, story_id: str) -> str | None:
+    after_text = prd_path.read_text()
+    if after_text == before_text:
+        return "PRD file was not updated."
+    before_total, before_checked = story_checkbox_counts(before_text, story_id)
+    after_total, after_checked = story_checkbox_counts(after_text, story_id)
+    if before_total == 0 or after_total == 0:
+        return "Current story does not expose markdown checkbox acceptance criteria."
+    if after_checked <= before_checked:
+        return "Current story checkboxes were not advanced."
+    return None
 
 
 def run_one_prd(
@@ -487,9 +654,12 @@ def run_one_prd(
             write_state(state_path, state)
             append_progress(progress_path, f"completed all stories for {prd.path.name}")
             status_line(f"Completed: {prd.path}")
+            cleanup_runtime_files(prd)
             return True
 
         for attempt in range(1, args.retries + 1):
+            before_prd_text = prd.path.read_text()
+            before_head = git_head_commit(prd.path.parent.parent.parent)
             state = load_state(state_path)
             state["status"] = "running"
             state["active_story_id"] = story.story_id
@@ -498,6 +668,10 @@ def run_one_prd(
             state["failed_story_id"] = None
             state["last_error"] = None
             write_state(state_path, state)
+            before_clean = git_worktree_clean(
+                prd.path.parent.parent.parent,
+                ignored_paths=[state_path, progress_path],
+            )
             append_progress(progress_path, f"starting {story.story_id} attempt {attempt}/{args.retries} with command: {agent_command}")
             status_line(f"{story.story_id} attempt {attempt}/{args.retries}")
 
@@ -505,6 +679,17 @@ def run_one_prd(
             exit_code, output = run_agent_command(agent_command, prompt, timeout_seconds)
             if args.verbose and output:
                 print(output, end="" if output.endswith("\n") else "\n")
+
+            if exit_code == 0:
+                verification_error = verify_story_progress(prd.path, before_prd_text, story.story_id)
+                if verification_error is not None:
+                    exit_code = 65
+                    output = f"{output}\n[runner] verification failed: {verification_error}\n"
+            if exit_code == 0 and before_head is not None and before_clean is True:
+                after_head = git_head_commit(prd.path.parent.parent.parent)
+                if after_head == before_head:
+                    exit_code = 66
+                    output = f"{output}\n[runner] verification failed: no new git commit was created for this story.\n"
 
             state = load_state(state_path)
             if exit_code == 0:
@@ -562,6 +747,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("prds", nargs="*", help="PRD paths processed in order")
+    parser.add_argument("--branch", default="", help="Git branch to checkout before starting the loop")
     parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
     parser.add_argument("--timeout", default=DEFAULT_TIMEOUT_RAW)
     parser.add_argument(
@@ -582,6 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     prd_paths = resolve_prd_list(args.prds)
     if not prd_paths:
         fail("No PRD files found.")
+    prompt_run_confirmation(args, prd_paths)
     if args.retries < 1:
         fail("--retries must be >= 1")
     try:

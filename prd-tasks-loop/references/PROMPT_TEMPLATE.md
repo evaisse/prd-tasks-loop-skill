@@ -40,8 +40,9 @@ Rules:
 - Read the PRD and both runtime logs before changing code.
 - Prefer TDD-first execution when feasible.
 - Run the defined test command and quality gates before finishing when they are non-empty.
+- Update the PRD itself before exiting successfully by checking the acceptance criteria completed for the current story.
+- If you are running inside a Git repository, commit the story-scoped changes before exiting successfully.
 - Do not edit `*.json.log` or `*.progress.log`.
-- Do not commit.
 - Keep your final output concise and operational.
 - Exit non-zero if the story is still blocked or incomplete.
 ```

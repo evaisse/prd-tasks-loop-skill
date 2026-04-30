@@ -58,6 +58,8 @@ When the user needs execution:
 - use `scripts/prd-tasks-loop.py`
 - treat the script as the runtime source of truth
 - do not edit `.json.log` or `.progress.log` files manually
+- expect an interactive confirmation before the loop starts
+- when running inside a Git repository, optionally use `--branch=<name>` to choose the branch before execution
 
 ## Public Script
 
@@ -78,6 +80,12 @@ $HOME/Sites/projects/prd-tasks-loop/prd-tasks-loop/scripts/prd-tasks-loop.py \
   --agent='my-agent --stdin' \
   docs/prd/2026-04-30-104512-jwt-authentication.md \
   docs/prd/2026-04-30-111200-rate-limiter.md
+
+# Run on a specific Git branch
+$HOME/Sites/projects/prd-tasks-loop/prd-tasks-loop/scripts/prd-tasks-loop.py \
+  --branch=feature/prd-loop \
+  --agent=codex \
+  docs/prd/2026-04-30-104512-jwt-authentication.md
 ```
 
 ## Required PRD Structure
@@ -160,8 +168,9 @@ Agents must:
 - work on exactly one story
 - prefer TDD-first execution
 - run tests and quality gates when defined
+- update the current story in the PRD by checking completed acceptance-criteria checkboxes before exiting successfully
+- commit the story-scoped changes after each successful story when running inside a Git repository
 - never modify runtime logs directly
-- never commit from inside the agent run
 
 ## References
 
