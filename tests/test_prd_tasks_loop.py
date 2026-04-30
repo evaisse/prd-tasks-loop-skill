@@ -141,6 +141,7 @@ def write_story_completion_commit_agent(workspace: Path, name: str) -> Path:
         if not prd_match or not story_match:
             sys.exit(91)
         prd_path = Path(prd_match.group(1).strip())
+        prd_id = prd_path.stem
         story_id = story_match.group(1).strip()
         text = prd_path.read_text()
         pattern = re.compile(rf"(?ms)(^###\\s+{re.escape(story_id)}:.*?)(?=^###\\s+US-|\\Z)")
@@ -152,7 +153,44 @@ def write_story_completion_commit_agent(workspace: Path, name: str) -> Path:
         text = text[:match.start()] + updated_block + text[match.end():]
         prd_path.write_text(text)
         subprocess.run(["git", "add", str(prd_path)], check=True, cwd=prd_path.parent.parent.parent)
-        subprocess.run(["git", "commit", "-m", f"feat: complete {story_id.lower()}"], check=True, cwd=prd_path.parent.parent.parent)
+        subprocess.run(
+            ["git", "commit", "-m", f"feat(prd): complete {story_id} for {prd_id}"],
+            check=True,
+            cwd=prd_path.parent.parent.parent,
+        )
+        sys.exit(0)
+        """
+    )
+    return write_agent(workspace, name, body)
+
+
+def write_story_completion_bad_commit_agent(workspace: Path, name: str) -> Path:
+    body = textwrap.dedent(
+        """\
+        #!/usr/bin/env python3
+        import re
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        prompt = sys.stdin.read()
+        prd_match = re.search(r"^- PRD: (.+)$", prompt, re.MULTILINE)
+        story_match = re.search(r"^Target story: (US-\\d+):", prompt, re.MULTILINE)
+        if not prd_match or not story_match:
+            sys.exit(91)
+        prd_path = Path(prd_match.group(1).strip())
+        story_id = story_match.group(1).strip()
+        text = prd_path.read_text()
+        pattern = re.compile(rf"(?ms)(^###\\s+{re.escape(story_id)}:.*?)(?=^###\\s+US-|\\Z)")
+        match = pattern.search(text)
+        if not match:
+            sys.exit(92)
+        block = match.group(1)
+        updated_block = re.sub(r"^(\\s*- \\[) (\\]\\s+)", r"\\1x\\2", block, flags=re.MULTILINE)
+        text = text[:match.start()] + updated_block + text[match.end():]
+        prd_path.write_text(text)
+        subprocess.run(["git", "add", str(prd_path)], check=True, cwd=prd_path.parent.parent.parent)
+        subprocess.run(["git", "commit", "-m", "complete story"], check=True, cwd=prd_path.parent.parent.parent)
         sys.exit(0)
         """
     )
@@ -390,6 +428,23 @@ class PrdTasksLoopTests(unittest.TestCase):
         self.init_git_repo(workspace)
         result = self.run_script(workspace, "--agent=commit-agent", str(prd))
         self.assertIn("US-001 passed (1/3)", result.stdout)
+
+    def test_git_repo_rejects_story_commit_without_story_and_prd_refs(self) -> None:
+        workspace = self.make_workspace()
+        prd = write_prd(workspace, "2026-04-30-104512-git-commit-bad-subject.md", "Git Commit Bad Subject")
+        write_story_completion_bad_commit_agent(workspace, "bad-commit-agent")
+        self.init_git_repo(workspace)
+        result = self.run_script(
+            workspace,
+            "--agent=bad-commit-agent",
+            "--retries",
+            "1",
+            str(prd),
+            allow_failure=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("US-001 failed (1/1, exit 67)", result.stdout)
+        self.assertIn("Failed after retries", result.stdout)
 
 
 if __name__ == "__main__":

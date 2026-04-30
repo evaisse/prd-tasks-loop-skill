@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PRD Tasks Loop</title>
+    <meta
+      name="description"
+      content="PRD Tasks Loop turns product requirements into a visible, story-by-story execution loop for coding agents."
+    >
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">PRD Tasks Loop</p>
+        <div class="hero-grid">
+          <section class="hero-copy">
+            <h1>Visible delivery loops for story-scoped coding agents.</h1>
+            <p class="lede">
+              Author a canonical PRD, pick the next actionable user story, render one bounded prompt,
+              and let the loop verify the PRD update, commit discipline, and runtime cleanup.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="https://github.com/evaisse/prd-tasks-loop-skill">View repository</a>
+              <a class="button button-secondary" href="https://github.com/evaisse/prd-tasks-loop-skill/tree/main/prd-tasks-loop">Open the skill</a>
+            </div>
+          </section>
+          <aside class="hero-panel">
+            <div class="panel-head">
+              <span>Loop Snapshot</span>
+              <span class="status-pill">story-by-story</span>
+            </div>
+            <ol class="loop-list">
+              <li>Validate one PRD under <code>docs/prd/</code></li>
+              <li>Resolve the next unblocked <code>US-xxx</code></li>
+              <li>Render a focused agent prompt with tests and gates</li>
+              <li>Require a PRD update and Git commit proof on success</li>
+              <li>Retry, back off, or stop with visible logs on failure</li>
+            </ol>
+          </aside>
+        </div>
+      </header>
+
+      <main>
+        <section class="band">
+          <div class="band-label">What It Ships</div>
+          <div class="cards">
+            <article class="card">
+              <h2>Canonical PRD format</h2>
+              <p>Predictable Markdown structure, stable identifiers, and explicit user stories ready for execution.</p>
+            </article>
+            <article class="card">
+              <h2>Observable runtime</h2>
+              <p>State and progress logs sit beside the PRD while the story is in flight, then disappear on completion.</p>
+            </article>
+            <article class="card">
+              <h2>Commit discipline</h2>
+              <p>Successful stories can require conventional commits that reference both the user story and the attached PRD.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="showcase">
+          <div class="showcase-copy">
+            <p class="section-kicker">Contract</p>
+            <h2>One story in, one accountable change out.</h2>
+            <p>
+              The runner sends a single active story, current acceptance criteria, TDD hints, quality gates,
+              and runtime context. Agents are asked to finish exactly that slice, update the PRD, and leave
+              behind an auditable commit trail.
+            </p>
+          </div>
+          <div class="terminal">
+            <div class="terminal-top">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <pre><code>$ python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
+  --agent=codex \
+  docs/prd/2026-04-30-104512-jwt-authentication.md
+
+2026-04-30T15:17:45+00:00 US-001 attempt 1/3
+2026-04-30T15:18:57+00:00 US-001 passed (1/3)
+2026-04-30T15:18:57+00:00 Completed: docs/prd/2026-04-30-104512-jwt-authentication.md
+
+feat(prd): complete US-001 for 2026-04-30-104512-jwt-authentication</code></pre>
+          </div>
+        </section>
+
+        <section class="timeline">
+          <div class="section-kicker">Flow</div>
+          <h2>From PRD to shipped slice.</h2>
+          <div class="timeline-grid">
+            <article>
+              <span class="step-index">01</span>
+              <h3>Write the PRD</h3>
+              <p>Keep stories explicit, dependency-aware, and TDD-oriented.</p>
+            </article>
+            <article>
+              <span class="step-index">02</span>
+              <h3>Run the loop</h3>
+              <p>Pick a preset or custom agent command and confirm the execution set.</p>
+            </article>
+            <article>
+              <span class="step-index">03</span>
+              <h3>Verify the outcome</h3>
+              <p>Require PRD checkbox progress, optional commit proof, and log cleanup.</p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

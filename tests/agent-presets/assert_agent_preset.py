@@ -15,9 +15,18 @@ BIN_DIR = ROOT / "tests" / "agent-presets" / "bin"
 PRD_REL = Path("docs/prd/2026-04-30-120000-agent-preset-smoke.md")
 
 EXPECTED = {
-    "codex": ["exec", "--skip-git-repo-check", "--yolo", "-"],
-    "gemini": ["-p"],
-    "opencode": ["run", "-"],
+    "codex": {
+        "args": ["exec", "--skip-git-repo-check", "--yolo", "-"],
+        "prompt_source": "stdin",
+    },
+    "gemini": {
+        "args_prefix": ["-p"],
+        "prompt_source": "argv",
+    },
+    "opencode": {
+        "args_prefix": ["run"],
+        "prompt_source": "argv",
+    },
 }
 
 
@@ -35,7 +44,7 @@ def ensure(condition: bool, message: str) -> None:
 def install_stub(wrapper_name: str, workspace_bin: Path) -> None:
     wrapper = workspace_bin / wrapper_name
     wrapper.write_text(
-        f'#!/usr/bin/env sh\n"{sys.executable}" "{BIN_DIR / "agent_stub.py"}" "$@"\n',
+        f'#!/usr/bin/env sh\nPRD_AGENT_STUB_NAME="{wrapper_name}" "{sys.executable}" "{BIN_DIR / "agent_stub.py"}" "$@"\n',
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
@@ -49,7 +58,7 @@ def main() -> int:
         return 2
 
     agent = sys.argv[1]
-    expected_args = EXPECTED[agent]
+    expected = EXPECTED[agent]
 
     with tempfile.TemporaryDirectory(prefix=f"preset-{agent}-") as tmp:
         workspace = Path(tmp) / "repo"
@@ -91,32 +100,52 @@ def main() -> int:
         artifact_dir = workspace / ".agent-artifacts"
         args_file = artifact_dir / f"{agent}.args.txt"
         stdin_file = artifact_dir / f"{agent}.stdin.txt"
+        prompt_file = artifact_dir / f"{agent}.prompt.txt"
         json_file = artifact_dir / f"{agent}.json"
         result_file = workspace / "project" / "result.txt"
         prd_file = workspace / PRD_REL
 
         ensure(args_file.exists(), f"missing args file for {agent}")
         ensure(stdin_file.exists(), f"missing stdin file for {agent}")
+        ensure(prompt_file.exists(), f"missing resolved prompt file for {agent}")
         ensure(json_file.exists(), f"missing json marker for {agent}")
 
-        actual_args = args_file.read_text(encoding="utf-8").strip().split()
-        ensure(
-            actual_args == expected_args,
-            f"unexpected args for {agent}: {actual_args} != {expected_args}",
-        )
-
-        stdin_payload = stdin_file.read_text(encoding="utf-8")
-        ensure(
-            "Target story: US-001: Validate preset agent invocation" in stdin_payload,
-            "stdin prompt missing target story",
-        )
-        ensure(
-            "Acceptance criteria:" in stdin_payload,
-            "stdin prompt missing acceptance criteria",
-        )
-
         marker = json.loads(json_file.read_text(encoding="utf-8"))
-        ensure(marker["stdin_non_empty"] is True, "stdin should be non-empty")
+        actual_args = marker["args"]
+        if "args" in expected:
+            ensure(
+                actual_args == expected["args"],
+                f"unexpected args for {agent}: {actual_args} != {expected['args']}",
+            )
+        else:
+            prefix = expected["args_prefix"]
+            ensure(
+                actual_args[: len(prefix)] == prefix,
+                f"unexpected args prefix for {agent}: {actual_args}",
+            )
+
+        prompt_payload = prompt_file.read_text(encoding="utf-8")
+        ensure(
+            "Target story: US-001: Validate preset agent invocation" in prompt_payload,
+            "resolved prompt missing target story",
+        )
+        ensure(
+            "Acceptance criteria:" in prompt_payload,
+            "resolved prompt missing acceptance criteria",
+        )
+
+        ensure(
+            marker["prompt_source"] == expected["prompt_source"],
+            f"unexpected prompt source for {agent}: {marker['prompt_source']}",
+        )
+        ensure(
+            marker["resolved_prompt_non_empty"] is True,
+            "resolved prompt should be non-empty",
+        )
+        if expected["prompt_source"] == "stdin":
+            ensure(marker["stdin_non_empty"] is True, "stdin should be non-empty")
+        else:
+            ensure(marker["stdin_non_empty"] is False, "stdin should be empty")
 
         result_text = result_file.read_text(encoding="utf-8")
         ensure(f"agent={agent}" in result_text, "result file missing agent marker")
@@ -131,7 +160,7 @@ def main() -> int:
             "PRD checkbox 1 not checked",
         )
         ensure(
-            "- [x] The preset stub records a non-empty stdin payload" in prd_text,
+            "- [x] The preset stub records a non-empty rendered prompt payload" in prd_text,
             "PRD checkbox 2 not checked",
         )
         ensure(

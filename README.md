@@ -111,6 +111,7 @@ python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
 - In a Git repository, the startup prompt shows the current branch and optional `--branch=...` target.
 - Outside a Git repository, the startup prompt only asks for confirmation that the loop should run without Git support.
 - When the worktree starts clean inside a Git repository, a successful story is expected to produce a new commit.
+- Story commits should use Conventional Commits and include both the active `US-xxx` identifier and the attached PRD ID.
 - Agents should never modify `.json.log` or `.progress.log` directly.
 - When a PRD is fully completed, its `.json.log` and `.progress.log` files are removed automatically.
 
@@ -125,12 +126,13 @@ Run:
 
 ```bash
 python3 tests/test_prd_tasks_loop.py
+python3 tests/cli-contracts/assert_real_cli_contracts.py
 python3 tests/agent-presets/assert_agent_preset.py codex
 python3 tests/agent-presets/assert_agent_preset.py gemini
 python3 tests/agent-presets/assert_agent_preset.py opencode
 ```
 
-The GitHub Actions workflow `.github/workflows/agent-presets.yml` runs these preset contract checks on pull requests only with `ubuntu-22.04`.
+The GitHub Actions workflow `.github/workflows/cli-contracts.yml` runs the upstream CLI help-contract checks on pull requests with `ubuntu-22.04`.
 
 ## Real agent E2E on GitHub Actions
 
@@ -140,17 +142,19 @@ The workflow `.github/workflows/real-agent-e2e.yml` runs a pull-request-only blo
 - `@google/gemini-cli`
 - `opencode`
 
-The workflow uses `npx` and configures OpenRouter through environment variables.
+The workflow uses `npx`. The `codex` job is pinned to the OpenAI provider with `gpt-5.4`, while `gemini` and `opencode` continue to use the OpenRouter-compatible environment setup.
 
 Required repository secret:
 
 ```text
+OPENAI_API_KEY
 OPENROUTER_API_KEY
 ```
 
-Default model configured in the workflow:
+Default remote models configured in the workflow:
 
 ```text
+codex: gpt-5.4
 meta-llama/llama-3.1-8b-instruct:free
 ```
 
@@ -158,13 +162,13 @@ The real E2E smoke test copies `tests/e2e-real/fixture/` into a temporary Git re
 
 - create `project/result.txt` with exactly `STATUS=done`
 - check the active story acceptance criteria in the PRD
-- create one Git commit for the story
+- create one Git commit for the story with a Conventional Commits subject that includes the story ID and PRD ID
 - allow the runner to clean up the runtime log files
 
 You can run the harness locally if you already have a valid `OPENROUTER_API_KEY` in your environment:
 
 ```bash
-OPENROUTER_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py codex
+OPENAI_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py codex
 OPENROUTER_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py gemini
 OPENROUTER_API_KEY=... python3 tests/e2e-real/run_real_agent_e2e.py opencode
 ```
@@ -174,3 +178,7 @@ Notes:
 - this is a true remote E2E smoke test, so it depends on CLI package availability, provider compatibility, and OpenRouter model availability
 - the configured `:free` model may change or disappear on OpenRouter over time
 - if one agent CLI requires different provider variables than the current OpenAI-compatible setup, the workflow will need a follow-up adjustment
+
+## Demo Site
+
+A static showcase site lives in `docs-site/` and is deployed with GitHub Pages through `.github/workflows/pages.yml`.

@@ -15,6 +15,7 @@ jobs:
           - gemini
           - opencode
     env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       OPENROUTER_MODEL: meta-llama/llama-3.1-8b-instruct:free
 

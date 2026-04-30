@@ -170,6 +170,7 @@ Agents must:
 - run tests and quality gates when defined
 - update the current story in the PRD by checking completed acceptance-criteria checkboxes before exiting successfully
 - commit the story-scoped changes after each successful story when running inside a Git repository
+- use a Conventional Commits subject that includes both the active `US-xxx` story ID and the attached PRD ID
 - never modify runtime logs directly
 
 ## References

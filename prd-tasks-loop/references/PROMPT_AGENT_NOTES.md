@@ -28,16 +28,16 @@ The runner always renders the generic prompt template first. These notes only ex
 ## Gemini
 
 - `--agent=gemini`
-- default command: `gemini -p`
-- prompt transport: stdin
-- expectation: keep shell quoting simple and avoid extra wrappers when overriding
+- default command: `python3 .../prompt_argv_bridge.py replace-last gemini -p __PROMPT__`
+- prompt transport: prompt argument via `-p`
+- expectation: the runner bridges its stdin payload into Gemini's explicit non-interactive prompt argument
 
 ## OpenCode
 
 - `--agent=opencode`
-- default command: `opencode run -`
-- prompt transport: stdin
-- expectation: preserve the rendered prompt exactly
+- default command: `python3 .../prompt_argv_bridge.py append opencode run`
+- prompt transport: positional prompt argument
+- expectation: the runner bridges its stdin payload into OpenCode's non-interactive `run [message..]` contract
 
 ## Custom
 

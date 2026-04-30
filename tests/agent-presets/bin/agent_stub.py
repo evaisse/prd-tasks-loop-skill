@@ -20,10 +20,27 @@ def replace_once(text: str, old: str, new: str) -> str:
 
 
 def main() -> int:
-    argv0 = Path(sys.argv[0]).name
-    prompt = sys.stdin.read()
+    argv0 = os.environ.get("PRD_AGENT_STUB_NAME", Path(sys.argv[0]).name)
+    stdin_payload = sys.stdin.read()
+    if argv0 == "codex":
+        prompt = stdin_payload
+        prompt_source = "stdin"
+    elif argv0 == "gemini":
+        if len(sys.argv) < 3 or sys.argv[1] != "-p":
+            return fail("gemini stub expected `-p <prompt>`")
+        prompt = sys.argv[2]
+        prompt_source = "argv"
+    elif argv0 == "opencode":
+        if len(sys.argv) < 3 or sys.argv[1] != "run":
+            return fail("opencode stub expected `run <prompt>`")
+        prompt = sys.argv[2]
+        prompt_source = "argv"
+    else:
+        prompt = stdin_payload
+        prompt_source = "stdin"
+
     if not prompt.strip():
-        return fail("stdin payload is empty")
+        return fail("resolved prompt payload is empty")
 
     cwd = Path.cwd()
     artifact_dir = cwd / ".agent-artifacts"
@@ -31,10 +48,12 @@ def main() -> int:
 
     args_path = artifact_dir / f"{argv0}.args.txt"
     stdin_path = artifact_dir / f"{argv0}.stdin.txt"
+    prompt_path = artifact_dir / f"{argv0}.prompt.txt"
     marker_path = artifact_dir / f"{argv0}.json"
 
     args_path.write_text(" ".join(sys.argv[1:]) + "\n", encoding="utf-8")
-    stdin_path.write_text(prompt, encoding="utf-8")
+    stdin_path.write_text(stdin_payload, encoding="utf-8")
+    prompt_path.write_text(prompt, encoding="utf-8")
 
     prd_rel = Path("docs/prd/2026-04-30-120000-agent-preset-smoke.md")
     target_rel = Path("project/result.txt")
@@ -49,8 +68,8 @@ def main() -> int:
     )
     prd_text = replace_once(
         prd_text,
-        "- [ ] The preset stub records a non-empty stdin payload",
-        "- [x] The preset stub records a non-empty stdin payload",
+        "- [ ] The preset stub records a non-empty rendered prompt payload",
+        "- [x] The preset stub records a non-empty rendered prompt payload",
     )
     prd_text = replace_once(
         prd_text,
@@ -69,7 +88,9 @@ def main() -> int:
             {
                 "agent": argv0,
                 "args": sys.argv[1:],
-                "stdin_non_empty": bool(prompt.strip()),
+                "prompt_source": prompt_source,
+                "stdin_non_empty": bool(stdin_payload.strip()),
+                "resolved_prompt_non_empty": bool(prompt.strip()),
             },
             indent=2,
         )
@@ -81,7 +102,13 @@ def main() -> int:
         ["git", "add", str(prd_rel), str(target_rel), str(artifact_dir)], check=True
     )
     subprocess.run(
-        ["git", "commit", "-m", f"Complete story with {argv0} stub"], check=True
+        [
+            "git",
+            "commit",
+            "-m",
+            f"feat(prd): complete US-001 for 2026-04-30-120000-agent-preset-smoke via {argv0} stub",
+        ],
+        check=True,
     )
     return 0
 

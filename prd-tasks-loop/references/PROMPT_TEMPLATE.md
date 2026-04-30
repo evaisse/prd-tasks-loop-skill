@@ -42,6 +42,8 @@ Rules:
 - Run the defined test command and quality gates before finishing when they are non-empty.
 - Update the PRD itself before exiting successfully by checking the acceptance criteria completed for the current story.
 - If you are running inside a Git repository, commit the story-scoped changes before exiting successfully.
+- Use a Conventional Commits subject that includes both the active story ID and the active PRD ID.
+- Example commit subject: `feat(prd): complete {{STORY_ID}} for {{PRD_ID}}`
 - Do not edit `*.json.log` or `*.progress.log`.
 - Keep your final output concise and operational.
 - Exit non-zero if the story is still blocked or incomplete.

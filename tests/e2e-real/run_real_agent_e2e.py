@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,12 +23,14 @@ AGENTS = {
             "exec",
             "--skip-git-repo-check",
             "--yolo",
+            "-c",
+            'model_provider="openai"',
+            "-c",
+            'model="gpt-5.4"',
             "-",
         ],
         "env": {
-            "OPENAI_API_KEY": "OPENROUTER_API_KEY",
-            "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
-            "OPENAI_MODEL": "OPENROUTER_MODEL",
+            "OPENAI_API_KEY": "OPENAI_API_KEY",
         },
     },
     "gemini": {
@@ -39,7 +42,7 @@ AGENTS = {
         },
     },
     "opencode": {
-        "command": ["npx", "-y", "opencode", "run", "-"],
+        "command": ["npx", "-y", "opencode", "run"],
         "env": {
             "OPENAI_API_KEY": "OPENROUTER_API_KEY",
             "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
@@ -75,12 +78,16 @@ def main() -> int:
     agent = sys.argv[1]
     config = AGENTS[agent]
 
-    openrouter_key = subprocess.os.environ.get("OPENROUTER_API_KEY", "")
+    required_env = {value for value in config["env"].values() if value.isupper()}
+    missing_env = [
+        name for name in sorted(required_env) if not subprocess.os.environ.get(name, "")
+    ]
+    if missing_env:
+        raise AssertionError(f"missing required env: {', '.join(missing_env)}")
+
     openrouter_model = subprocess.os.environ.get(
         "OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free"
     )
-    if not openrouter_key:
-        raise AssertionError("OPENROUTER_API_KEY is required")
 
     with tempfile.TemporaryDirectory(prefix=f"real-e2e-{agent}-") as tmp:
         workspace = Path(tmp) / "repo"
@@ -89,17 +96,10 @@ def main() -> int:
         env = dict(subprocess.os.environ)
         env["PRD_TASKS_LOOP_AUTO_CONFIRM"] = "1"
         env["PRD_TASKS_LOOP_OS"] = "Linux"
-        env["OPENROUTER_API_KEY"] = openrouter_key
         env["OPENROUTER_MODEL"] = openrouter_model
 
         for target, source in config["env"].items():
-            env[target] = (
-                openrouter_key
-                if source == "OPENROUTER_API_KEY"
-                else openrouter_model
-                if source == "OPENROUTER_MODEL"
-                else source
-            )
+            env[target] = subprocess.os.environ.get(source, source)
 
         ensure_command(run(["git", "init"], workspace, env), "git init failed")
         ensure_command(
@@ -116,7 +116,31 @@ def main() -> int:
             "initial commit failed",
         )
 
-        agent_command = " ".join(config["command"])
+        if agent in {"gemini", "opencode"}:
+            prompt_bridge = ROOT / "prd-tasks-loop" / "scripts" / "prompt_argv_bridge.py"
+            if agent == "gemini":
+                agent_parts = [
+                    sys.executable,
+                    str(prompt_bridge),
+                    "replace-last",
+                    *config["command"],
+                    "__PROMPT__",
+                ]
+                agent_command = " ".join(
+                    shlex.quote(part) for part in agent_parts
+                )
+            else:
+                agent_parts = [
+                    sys.executable,
+                    str(prompt_bridge),
+                    "append",
+                    *config["command"],
+                ]
+                agent_command = " ".join(
+                    shlex.quote(part) for part in agent_parts
+                )
+        else:
+            agent_command = " ".join(shlex.quote(part) for part in config["command"])
         result = run(
             [
                 sys.executable,

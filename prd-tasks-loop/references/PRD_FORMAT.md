@@ -56,6 +56,20 @@ Authoring guidance:
 - prefer project-relevant gates such as lint, typecheck, targeted tests, or framework validation commands
 - leave it empty only when no meaningful automated gate exists yet
 
+## Story Commit Contract
+
+When an agent completes a story inside a Git repository, the resulting commit subject should:
+
+- use Conventional Commits
+- include the active user-story ID such as `US-001`
+- include the attached PRD ID such as `2026-04-30-104512-jwt-authentication`
+
+Example:
+
+```text
+feat(prd): complete US-001 for 2026-04-30-104512-jwt-authentication
+```
+
 ## User Story Template
 
 Each story must use this shape:

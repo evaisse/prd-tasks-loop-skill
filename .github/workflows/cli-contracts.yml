@@ -1,0 +1,25 @@
+name: CLI Contracts
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cli-contracts:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Assert real CLI contracts
+        run: python3 tests/cli-contracts/assert_real_cli_contracts.py

@@ -45,3 +45,4 @@ Both runtime log files are deleted automatically when the PRD completes successf
 - do not edit runtime logs by hand
 - prefer CLI flags when you need temporary runtime overrides
 - expect the runner to stop on the first incomplete or failed PRD
+- when a story creates a Git commit, use a Conventional Commits subject that contains both the `US-xxx` story ID and the PRD ID

@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT_PATH.parents[1]
 PROMPT_TEMPLATE_PATH = SKILL_ROOT / "references" / "PROMPT_TEMPLATE.md"
 PROMPT_AGENT_NOTES_PATH = SKILL_ROOT / "references" / "PROMPT_AGENT_NOTES.md"
+PROMPT_ARGV_BRIDGE_PATH = SKILL_ROOT / "scripts" / "prompt_argv_bridge.py"
 DEFAULT_PRD_DIR = Path.cwd() / "docs" / "prd"
 
 DEFAULT_RETRIES = 3
@@ -37,6 +39,7 @@ DEFAULT_TIMEOUT_RAW = "2h"
 DEFAULT_AGENT_COMMAND = "codex exec --skip-git-repo-check --yolo -"
 DEFAULT_BACKOFF_BASE_SECONDS = 1.0
 DEFAULT_BACKOFF_MAX_SECONDS = 30.0
+CONVENTIONAL_COMMIT_RE = re.compile(r"^[a-z]+(?:\([a-z0-9-]+\))?!?: .+")
 
 FILENAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9][a-z0-9-]*$")
 PRD_TITLE_RE = re.compile(r"^#\s+PRD:\s*(.+?)\s*$", re.MULTILINE)
@@ -370,12 +373,20 @@ def render_prompt(
 
 def choose_agent_command(args: argparse.Namespace) -> tuple[str, str]:
     value = args.agent.strip()
+    bridge = shlex.quote(str(PROMPT_ARGV_BRIDGE_PATH))
+    python_exec = shlex.quote(sys.executable)
     preset_map = {
         "codex": ("codex", "codex exec --skip-git-repo-check --yolo -"),
         "amp": ("amp", "amp -p -"),
         "claude-code": ("claude-code", "claude -p"),
-        "gemini": ("gemini", "gemini -p"),
-        "opencode": ("opencode", "opencode run -"),
+        "gemini": (
+            "gemini",
+            f"{python_exec} {bridge} replace-last gemini -p __PROMPT__",
+        ),
+        "opencode": (
+            "opencode",
+            f"{python_exec} {bridge} append opencode run",
+        ),
     }
     return preset_map.get(value, ("custom", value))
 
@@ -436,6 +447,19 @@ def git_head_commit(cwd: Path) -> str | None:
         capture_output=True,
     )
     return head.stdout.strip() if head.returncode == 0 else None
+
+
+def git_commit_subject(cwd: Path, revision: str = "HEAD") -> str | None:
+    repo_root = git_repo_root(cwd)
+    if repo_root is None:
+        return None
+    subject = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s", revision],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    )
+    return subject.stdout.strip() if subject.returncode == 0 else None
 
 
 def git_worktree_clean(cwd: Path, ignored_paths: list[Path] | None = None) -> bool | None:
@@ -609,6 +633,19 @@ def verify_story_progress(prd_path: Path, before_text: str, story_id: str) -> st
     return None
 
 
+def verify_story_commit_subject(repo_root: Path, prd: PrdData, story: Story, revision: str) -> str | None:
+    subject = git_commit_subject(repo_root, revision)
+    if not subject:
+        return "The story commit message is missing."
+    if not CONVENTIONAL_COMMIT_RE.match(subject):
+        return "The story commit message must use the Conventional Commits subject format."
+    if story.story_id not in subject:
+        return f"The story commit message must include `{story.story_id}`."
+    if prd.prd_id not in subject:
+        return f"The story commit message must include `{prd.prd_id}`."
+    return None
+
+
 def run_one_prd(
     args: argparse.Namespace,
     prd: PrdData,
@@ -659,7 +696,8 @@ def run_one_prd(
 
         for attempt in range(1, args.retries + 1):
             before_prd_text = prd.path.read_text()
-            before_head = git_head_commit(prd.path.parent.parent.parent)
+            repo_root = prd.path.parent.parent.parent
+            before_head = git_head_commit(repo_root)
             state = load_state(state_path)
             state["status"] = "running"
             state["active_story_id"] = story.story_id
@@ -686,10 +724,15 @@ def run_one_prd(
                     exit_code = 65
                     output = f"{output}\n[runner] verification failed: {verification_error}\n"
             if exit_code == 0 and before_head is not None and before_clean is True:
-                after_head = git_head_commit(prd.path.parent.parent.parent)
+                after_head = git_head_commit(repo_root)
                 if after_head == before_head:
                     exit_code = 66
                     output = f"{output}\n[runner] verification failed: no new git commit was created for this story.\n"
+                else:
+                    commit_error = verify_story_commit_subject(repo_root, prd, story, after_head)
+                    if commit_error is not None:
+                        exit_code = 67
+                        output = f"{output}\n[runner] verification failed: {commit_error}\n"
 
             state = load_state(state_path)
             if exit_code == 0:
