@@ -1,0 +1,588 @@
+#!/usr/bin/env python3
+"""prd-tasks-loop
+Copyright (c) 2026
+Inspired by the original Ralph loop from snarktank/ralph:
+https://github.com/snarktank/ralph
+
+This implementation is a simplified Python runner focused on canonical PRDs,
+visible state logs, positional PRD arguments, retry backoff, and automatic
+macOS caffeinate support.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import NoReturn
+
+
+SCRIPT_PATH = Path(__file__).resolve()
+SKILL_ROOT = SCRIPT_PATH.parents[1]
+PROMPT_TEMPLATE_PATH = SKILL_ROOT / "references" / "PROMPT_TEMPLATE.md"
+PROMPT_AGENT_NOTES_PATH = SKILL_ROOT / "references" / "PROMPT_AGENT_NOTES.md"
+DEFAULT_PRD_DIR = Path.cwd() / "docs" / "prd"
+
+DEFAULT_RETRIES = 3
+DEFAULT_TIMEOUT_RAW = "2h"
+DEFAULT_AGENT_COMMAND = "codex exec --skip-git-repo-check --yolo -"
+DEFAULT_BACKOFF_BASE_SECONDS = 1.0
+DEFAULT_BACKOFF_MAX_SECONDS = 30.0
+
+FILENAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9][a-z0-9-]*$")
+PRD_TITLE_RE = re.compile(r"^#\s+PRD:\s*(.+?)\s*$", re.MULTILINE)
+SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+STORY_RE = re.compile(r"^###\s+(US-\d+):\s*(.+?)\s*$", re.MULTILINE)
+
+REQUIRED_SECTIONS = (
+    "Introduction/Overview",
+    "Goals",
+    "User Stories",
+    "Functional Requirements",
+    "Non-Goals",
+    "Success Metrics",
+    "Open Questions",
+)
+
+
+@dataclass
+class Story:
+    story_id: str
+    title: str
+    description: str
+    acceptance: list[str]
+    tdd_test: str
+    tdd_implementation: str
+    dependencies: list[str]
+    parallel_group: str
+
+
+@dataclass
+class PrdData:
+    path: Path
+    prd_id: str
+    title: str
+    execution: dict
+    stories: list[Story]
+    errors: list[str]
+
+
+def iso_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def fail(message: str) -> NoReturn:
+    raise SystemExit(f"Error: {message}")
+
+
+def status_line(message: str) -> None:
+    print(message)
+
+
+def debug(enabled: bool, message: str) -> None:
+    if enabled:
+        print(f"[debug] {message}", file=sys.stderr)
+
+
+def parse_duration_to_seconds(raw: str) -> int:
+    match = re.fullmatch(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", raw.strip())
+    if not match or not any(match.groups()):
+        raise ValueError(raw)
+    days, hours, minutes, seconds = (int(value or 0) for value in match.groups())
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+def discover_prds() -> list[Path]:
+    if not DEFAULT_PRD_DIR.is_dir():
+        return []
+    return sorted(DEFAULT_PRD_DIR.glob("*.md"))
+
+
+def resolve_prd_list(values: list[str]) -> list[Path]:
+    if not values:
+        return discover_prds()
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for value in values:
+        path = Path(value).expanduser().resolve()
+        if path in seen:
+            continue
+        resolved.append(path)
+        seen.add(path)
+    return resolved
+
+
+def parse_sections(text: str) -> dict[str, str]:
+    matches = list(SECTION_RE.finditer(text))
+    sections: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        name = match.group(1).strip()
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections[name] = text[start:end].strip("\n")
+    return sections
+
+
+def parse_execution_settings(section_text: str) -> dict:
+    execution = {
+        "agent_command": "",
+        "test_command": "",
+        "quality_gates": [],
+    }
+    if not section_text:
+        return execution
+
+    agent_match = re.search(r"^Agent Command:\s*(.+?)\s*$", section_text, re.MULTILINE)
+    test_match = re.search(r"^Test Command:\s*(.+?)\s*$", section_text, re.MULTILINE)
+    if agent_match:
+        execution["agent_command"] = agent_match.group(1).strip()
+    if test_match:
+        execution["test_command"] = test_match.group(1).strip()
+
+    capture = False
+    gates: list[str] = []
+    for line in section_text.splitlines():
+        if line.strip() == "Quality Gates:":
+            capture = True
+            continue
+        if capture:
+            bullet = re.match(r"^\s*-\s+(.+?)\s*$", line)
+            if bullet:
+                gates.append(bullet.group(1).strip())
+            elif line.strip():
+                capture = False
+    execution["quality_gates"] = gates
+    return execution
+
+
+def parse_story(body: str, story_id: str, story_title: str, errors: list[str]) -> Story:
+    desc_match = re.search(r"(?ms)^\*\*Description:\*\*\s*(.+?)(?:\n\s*\n|\n\*\*|\Z)", body)
+    description = desc_match.group(1).strip() if desc_match else ""
+    if not description:
+        errors.append(f"{story_id} is missing `**Description:**`.")
+
+    acceptance_match = re.search(r"(?ms)^\*\*Acceptance Criteria:\*\*\s*(.+?)(?:\n\s*\n\*\*|\Z)", body)
+    acceptance_block = acceptance_match.group(1).strip() if acceptance_match else ""
+    acceptance = [line.strip() for line in acceptance_block.splitlines() if re.match(r"^\s*-\s+", line)]
+    if not acceptance:
+        errors.append(f"{story_id} must define at least one acceptance criterion.")
+
+    tdd_match = re.search(r"(?ms)^\*\*TDD Plan:\*\*\s*(.+?)(?:\n\s*\n\*\*|\Z)", body)
+    tdd_block = tdd_match.group(1).strip() if tdd_match else ""
+    test_match = re.search(r"^\s*-\s*Test:\s*(.+?)\s*$", tdd_block, re.MULTILINE)
+    impl_match = re.search(r"^\s*-\s*Implementation:\s*(.+?)\s*$", tdd_block, re.MULTILINE)
+    if not test_match:
+        errors.append(f"{story_id} is missing `- Test:` in `**TDD Plan:**`.")
+    if not impl_match:
+        errors.append(f"{story_id} is missing `- Implementation:` in `**TDD Plan:**`.")
+
+    deps_match = re.search(r"^\*\*Dependencies:\*\*\s*(.+?)\s*$", body, re.MULTILINE)
+    deps_raw = deps_match.group(1).strip() if deps_match else ""
+    if not deps_raw:
+        errors.append(f"{story_id} is missing `**Dependencies:**`.")
+    dependencies = [] if deps_raw in {"", "-"} else [item.strip() for item in deps_raw.split(",") if item.strip()]
+
+    parallel_match = re.search(r"^\*\*Parallel Group:\*\*\s*(.+?)\s*$", body, re.MULTILINE)
+    parallel_group = parallel_match.group(1).strip() if parallel_match else ""
+    if not parallel_group:
+        errors.append(f"{story_id} is missing `**Parallel Group:**`.")
+
+    return Story(
+        story_id=story_id,
+        title=story_title,
+        description=description,
+        acceptance=acceptance,
+        tdd_test=test_match.group(1).strip() if test_match else "",
+        tdd_implementation=impl_match.group(1).strip() if impl_match else "",
+        dependencies=dependencies,
+        parallel_group=parallel_group,
+    )
+
+
+def parse_prd(path: Path) -> PrdData:
+    text = path.read_text()
+    errors: list[str] = []
+
+    if not FILENAME_RE.fullmatch(path.stem):
+        errors.append(f"Invalid PRD filename `{path.name}`. Expected `YYYY-MM-DD-HHMMSS-<slug>.md`.")
+
+    title_match = PRD_TITLE_RE.search(text)
+    title = title_match.group(1).strip() if title_match else ""
+    if not title:
+        errors.append("Missing required heading `# PRD: <title>`.")
+
+    sections = parse_sections(text)
+    for section in REQUIRED_SECTIONS:
+        if section not in sections:
+            errors.append(f"Missing required section `## {section}`.")
+
+    stories: list[Story] = []
+    story_ids: set[str] = set()
+    stories_text = sections.get("User Stories", "")
+    story_matches = list(STORY_RE.finditer(stories_text))
+    if not story_matches:
+        errors.append("Missing at least one user story under `## User Stories`.")
+
+    for index, match in enumerate(story_matches):
+        story_id = match.group(1).strip()
+        story_title = match.group(2).strip()
+        start = match.end()
+        end = story_matches[index + 1].start() if index + 1 < len(story_matches) else len(stories_text)
+        body = stories_text[start:end].strip()
+        if story_id in story_ids:
+            errors.append(f"Duplicate story id `{story_id}`.")
+        story_ids.add(story_id)
+        stories.append(parse_story(body, story_id, story_title, errors))
+
+    execution = parse_execution_settings(sections.get("Execution Settings", ""))
+    return PrdData(
+        path=path.resolve(),
+        prd_id=path.stem,
+        title=title,
+        execution=execution,
+        stories=stories,
+        errors=errors,
+    )
+
+
+def state_path_for(prd_path: Path) -> Path:
+    return prd_path.with_suffix(".json.log")
+
+
+def progress_path_for(prd_path: Path) -> Path:
+    return prd_path.with_suffix(".progress.log")
+
+
+def append_progress(progress_path: Path, message: str) -> None:
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    with progress_path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{iso_now()} {message}\n")
+
+
+def load_state(state_path: Path) -> dict:
+    return json.loads(state_path.read_text())
+
+
+def write_state(state_path: Path, state: dict) -> None:
+    state["updated_at"] = iso_now()
+    state_path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def ensure_state(prd: PrdData, retries: int, timeout_raw: str, agent_command: str) -> tuple[Path, Path]:
+    state_path = state_path_for(prd.path)
+    progress_path = progress_path_for(prd.path)
+    if not state_path.exists():
+        now = iso_now()
+        state = {
+            "formatVersion": 1,
+            "prd_path": str(prd.path),
+            "prd_id": prd.prd_id,
+            "title": prd.title,
+            "status": "open",
+            "active_story_id": None,
+            "active_story_title": None,
+            "retry_count": 0,
+            "max_retries": retries,
+            "timeout": timeout_raw,
+            "selected_agent": agent_command,
+            "created_at": now,
+            "updated_at": now,
+            "completed_story_ids": [],
+            "failed_story_id": None,
+            "last_error": None,
+            "attempts": [],
+        }
+        write_state(state_path, state)
+        progress_path.touch()
+        append_progress(progress_path, f"initialized runtime state for {prd.path.name}")
+    return state_path, progress_path
+
+
+def recent_progress_block(progress_path: Path) -> str:
+    if not progress_path.exists():
+        return "- No progress log yet."
+    lines = progress_path.read_text().splitlines()
+    tail = lines[-12:]
+    if not tail:
+        return "- No progress log yet."
+    return "\n".join(f"- {line}" for line in tail)
+
+
+def agent_notes_block(preset: str) -> str:
+    text = PROMPT_AGENT_NOTES_PATH.read_text()
+    heading_map = {
+        "codex": "Codex",
+        "amp": "Amp",
+        "claude-code": "Claude Code",
+        "gemini": "Gemini",
+        "opencode": "OpenCode",
+        "custom": "Custom",
+    }
+    heading = heading_map.get(preset, "Custom")
+    match = re.search(rf"(?ms)^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", text)
+    return match.group(1).strip() if match else "Use exit status to signal success or failure."
+
+
+def render_prompt(
+    prd: PrdData,
+    story: Story,
+    state_path: Path,
+    progress_path: Path,
+    agent_command: str,
+    preset: str,
+) -> str:
+    template = PROMPT_TEMPLATE_PATH.read_text()
+    replacements = {
+        "{{PRD_PATH}}": str(prd.path),
+        "{{STATE_PATH}}": str(state_path),
+        "{{PROGRESS_PATH}}": str(progress_path),
+        "{{PRD_ID}}": prd.prd_id,
+        "{{STORY_ID}}": story.story_id,
+        "{{STORY_TITLE}}": story.title,
+        "{{DESCRIPTION}}": story.description,
+        "{{ACCEPTANCE}}": "\n".join(story.acceptance),
+        "{{TDD_TEST}}": story.tdd_test,
+        "{{TDD_IMPLEMENTATION}}": story.tdd_implementation,
+        "{{AGENT_COMMAND}}": agent_command,
+        "{{TEST_COMMAND}}": prd.execution["test_command"] or "(none)",
+        "{{QUALITY_GATES}}": "\n".join(f"- {gate}" for gate in prd.execution["quality_gates"]) or "- (none)",
+        "{{RECENT_PROGRESS}}": recent_progress_block(progress_path),
+        "{{AGENT_NOTES}}": agent_notes_block(preset),
+    }
+    rendered = template
+    for key, value in replacements.items():
+        rendered = rendered.replace(key, value)
+    return rendered
+
+
+def choose_agent_command(args: argparse.Namespace) -> tuple[str, str]:
+    value = args.agent.strip()
+    preset_map = {
+        "codex": ("codex", "codex exec --skip-git-repo-check --yolo -"),
+        "amp": ("amp", "amp -p -"),
+        "claude-code": ("claude-code", "claude -p"),
+        "gemini": ("gemini", "gemini -p"),
+        "opencode": ("opencode", "opencode run -"),
+    }
+    return preset_map.get(value, ("custom", value))
+
+
+def maybe_wrap_with_caffeinate(args: argparse.Namespace) -> None:
+    if os.environ.get("PRD_TASKS_LOOP_CAFFEINATE_WRAPPED") == "1":
+        return
+    os_name = os.environ.get("PRD_TASKS_LOOP_OS", os.uname().sysname)
+    if os_name != "Darwin":
+        return
+    if shutil.which("caffeinate") is None:
+        return
+    debug(args.verbose, "relaunching under caffeinate")
+    env = os.environ.copy()
+    env["PRD_TASKS_LOOP_CAFFEINATE_WRAPPED"] = "1"
+    os.execvpe("caffeinate", ["caffeinate", "-dimsu", sys.executable, str(SCRIPT_PATH), *sys.argv[1:]], env)
+
+
+def run_agent_command(command: str, prompt: str, timeout_seconds: int) -> tuple[int, str]:
+    try:
+        completed = subprocess.run(
+            command,
+            input=prompt,
+            shell=True,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+        )
+        return completed.returncode, completed.stdout + completed.stderr
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        return 124, f"{stdout}{stderr}\n[runner] timeout exceeded\n"
+
+
+def select_next_story(prd: PrdData, state: dict) -> Story | None:
+    completed = set(state.get("completed_story_ids", []))
+    if len(completed) == len(prd.stories):
+        return None
+    for story in prd.stories:
+        if story.story_id in completed:
+            continue
+        if all(dep in completed for dep in story.dependencies):
+            return story
+    raise RuntimeError("Blocked by unresolved dependencies")
+
+
+def record_attempt(state: dict, story_id: str, attempt: int, exit_code: int, result: str, output: str) -> None:
+    state.setdefault("attempts", []).append(
+        {
+            "story_id": story_id,
+            "attempt": attempt,
+            "exit_code": exit_code,
+            "result": result,
+            "finished_at": iso_now(),
+            "output_excerpt": output[-4000:],
+        }
+    )
+
+
+def compute_backoff_seconds(attempt_index: int) -> float:
+    scale = float(os.environ.get("PRD_TASKS_LOOP_BACKOFF_SCALE", "1"))
+    raw = min(DEFAULT_BACKOFF_BASE_SECONDS * (2 ** max(attempt_index - 1, 0)), DEFAULT_BACKOFF_MAX_SECONDS)
+    return raw * scale
+
+
+def run_one_prd(args: argparse.Namespace, prd: PrdData, preset: str, agent_command: str, timeout_seconds: int) -> bool:
+    if prd.errors:
+        status_line(f"PRD validation failed: {prd.path}")
+        for error in prd.errors:
+            print(f"  - {error}")
+        return False
+
+    if prd.execution["agent_command"] and args.agent == DEFAULT_AGENT_COMMAND:
+        agent_command = prd.execution["agent_command"]
+    elif prd.execution["agent_command"] and args.agent == "codex":
+        agent_command = prd.execution["agent_command"]
+    prd.execution["agent_command"] = agent_command
+
+    state_path, progress_path = ensure_state(prd, args.retries, args.timeout, agent_command)
+    append_progress(progress_path, f"validated {prd.path.name}")
+
+    while True:
+        state = load_state(state_path)
+        try:
+            story = select_next_story(prd, state)
+        except RuntimeError as exc:
+            state["status"] = "failed"
+            state["last_error"] = str(exc)
+            write_state(state_path, state)
+            append_progress(progress_path, "failed because remaining stories are blocked by dependencies")
+            status_line(f"Blocked by dependencies: {prd.path}")
+            return False
+
+        if story is None:
+            state["status"] = "completed"
+            state["active_story_id"] = None
+            state["active_story_title"] = None
+            state["retry_count"] = 0
+            write_state(state_path, state)
+            append_progress(progress_path, f"completed all stories for {prd.path.name}")
+            status_line(f"Completed: {prd.path}")
+            return True
+
+        for attempt in range(1, args.retries + 1):
+            state = load_state(state_path)
+            state["status"] = "running"
+            state["active_story_id"] = story.story_id
+            state["active_story_title"] = story.title
+            state["retry_count"] = attempt - 1
+            state["failed_story_id"] = None
+            state["last_error"] = None
+            write_state(state_path, state)
+            append_progress(progress_path, f"starting {story.story_id} attempt {attempt}/{args.retries} with command: {agent_command}")
+            status_line(f"{story.story_id} attempt {attempt}/{args.retries}")
+
+            prompt = render_prompt(prd, story, state_path, progress_path, agent_command, preset)
+            exit_code, output = run_agent_command(agent_command, prompt, timeout_seconds)
+            if args.verbose and output:
+                print(output, end="" if output.endswith("\n") else "\n")
+
+            state = load_state(state_path)
+            if exit_code == 0:
+                record_attempt(state, story.story_id, attempt, exit_code, "success", output)
+                completed = state.setdefault("completed_story_ids", [])
+                if story.story_id not in completed:
+                    completed.append(story.story_id)
+                state["status"] = "open"
+                state["active_story_id"] = None
+                state["active_story_title"] = None
+                state["retry_count"] = 0
+                state["failed_story_id"] = None
+                state["last_error"] = None
+                write_state(state_path, state)
+                append_progress(progress_path, f"completed {story.story_id} on attempt {attempt}/{args.retries}")
+                status_line(f"{story.story_id} passed ({attempt}/{args.retries})")
+                break
+
+            record_attempt(state, story.story_id, attempt, exit_code, "failure", output)
+            state["status"] = "open"
+            state["retry_count"] = attempt
+            state["failed_story_id"] = story.story_id
+            state["last_error"] = f"agent exit {exit_code}"
+            write_state(state_path, state)
+            append_progress(progress_path, f"failed {story.story_id} on attempt {attempt}/{args.retries} with exit {exit_code}")
+            status_line(f"{story.story_id} failed ({attempt}/{args.retries}, exit {exit_code})")
+
+            if attempt < args.retries:
+                backoff = compute_backoff_seconds(attempt)
+                append_progress(progress_path, f"backing off {backoff:g}s before retrying {story.story_id}")
+                status_line(f"{story.story_id} backing off {backoff:g}s before retry")
+                status_line(f"{story.story_id} retrying")
+                time.sleep(backoff)
+                continue
+
+            state["status"] = "failed"
+            state["last_error"] = "retries exhausted"
+            write_state(state_path, state)
+            append_progress(progress_path, f"retries exhausted for {story.story_id}; stopping PRD")
+            status_line(f"{story.story_id} failed permanently")
+            status_line(f"Failed after retries: {prd.path} ({story.story_id})")
+            return False
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="prd-tasks-loop.py",
+        description="Execute one or more PRDs sequentially with a single agent command.",
+        epilog=(
+            "Examples:\n"
+            "  prd-tasks-loop.py --agent=codex docs/prd/2026-04-30-104512-jwt-authentication.md\n"
+            "  prd-tasks-loop.py --agent=amp docs/prd/2026-04-30-104512-auth.md docs/prd/2026-04-30-111200-rate-limit.md\n"
+            "  prd-tasks-loop.py --agent='./myagent --stdin' --retries=5 --timeout=45m prd1.md prd2.md prd3.md"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument("prds", nargs="*", help="PRD paths processed in order")
+    parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
+    parser.add_argument("--timeout", default=DEFAULT_TIMEOUT_RAW)
+    parser.add_argument(
+        "--agent",
+        default="codex",
+        help=(
+            "Agent preset or full command. Built-in presets: codex, amp, claude-code, gemini, opencode. "
+            "Custom commands must read the rendered prompt from stdin."
+        ),
+    )
+    parser.add_argument("--verbose", action="store_true")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    maybe_wrap_with_caffeinate(args)
+    prd_paths = resolve_prd_list(args.prds)
+    if not prd_paths:
+        fail("No PRD files found.")
+    if args.retries < 1:
+        fail("--retries must be >= 1")
+    try:
+        timeout_seconds = parse_duration_to_seconds(args.timeout)
+    except ValueError:
+        fail(f"Invalid timeout: {args.timeout}")
+
+    preset, agent_command = choose_agent_command(args)
+    for prd_path in prd_paths:
+        prd = parse_prd(prd_path)
+        if not run_one_prd(args, prd, preset, agent_command, timeout_seconds):
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

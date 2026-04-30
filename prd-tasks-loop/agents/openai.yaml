@@ -1,0 +1,4 @@
+interface:
+  display_name: "PRD Tasks Loop"
+  short_description: "Create and execute canonical PRDs with a Python loop runner"
+  default_prompt: "Use prd-tasks-loop to create or edit a canonical PRD in docs/prd, or execute one or more PRDs through scripts/prd-tasks-loop.py with --agent=<preset-or-command>. Do not edit runtime log files manually."
