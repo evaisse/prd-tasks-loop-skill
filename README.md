@@ -1,13 +1,13 @@
 # prd-tasks-loop
 
-`prd-tasks-loop` is a Codex skill repo that combines PRD authoring and PRD execution into one workflow.
+`prd-tasks-loop` is a Codex skill repo that combines PRD authoring and PRD execution (a.k.a. [Ralph Loop](https://ghuntley.com/ralph/)) into one workflow.
 
 The skill itself lives under `./prd-tasks-loop/`.
 
 It provides:
 
-- a canonical Markdown PRD format without YAML frontmatter
-- a Python loop runner for executing PRDs
+- a canonical Markdown PRD format
+- a script (python) loop runner for executing PRDs
 - visible runtime logs beside each PRD
 - a generic agent prompt contract plus agent-specific invocation notes
 
@@ -31,20 +31,6 @@ run agent
                                           |
                                           v
                               next US or PRD completed
-```
-
-## Layout
-
-```text
-.
-├── README.md
-├── prd-tasks-loop/
-│   ├── SKILL.md
-│   ├── agents/openai.yaml
-│   ├── docs/prd/
-│   ├── references/
-│   └── scripts/prd-tasks-loop.py
-└── tests/test_prd_tasks_loop.py
 ```
 
 ## Canonical PRD Name
