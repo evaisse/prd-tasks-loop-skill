@@ -303,7 +303,7 @@ def ensure_state(prd: PrdData, retries: int, timeout_raw: str, agent_command: st
             "selected_agent": agent_command,
             "created_at": now,
             "updated_at": now,
-            "completed_story_ids": [],
+            "completed_story_ids": completed_story_ids_from_prd(prd),
             "failed_story_id": None,
             "last_error": None,
             "attempts": [],
@@ -311,6 +311,12 @@ def ensure_state(prd: PrdData, retries: int, timeout_raw: str, agent_command: st
         write_state(state_path, state)
         progress_path.touch()
         append_progress(progress_path, f"initialized runtime state for {prd.path.name}")
+    else:
+        state = load_state(state_path)
+        synced_state = sync_state_with_prd(prd, state)
+        if synced_state != state:
+            write_state(state_path, synced_state)
+            append_progress(progress_path, f"synchronized runtime state from {prd.path.name}")
     return state_path, progress_path
 
 
@@ -620,6 +626,38 @@ def story_checkbox_counts(text: str, story_id: str) -> tuple[int, int]:
     return total, checked
 
 
+def completed_story_ids_from_prd(prd: PrdData) -> list[str]:
+    text = prd.path.read_text()
+    completed: list[str] = []
+    for story in prd.stories:
+        total, checked = story_checkbox_counts(text, story.story_id)
+        if total > 0 and checked == total:
+            completed.append(story.story_id)
+    return completed
+
+
+def sync_state_with_prd(prd: PrdData, state: dict) -> dict:
+    synced = dict(state)
+    completed = list(
+        dict.fromkeys(
+            [
+                *synced.get("completed_story_ids", []),
+                *completed_story_ids_from_prd(prd),
+            ]
+        )
+    )
+    synced["completed_story_ids"] = completed
+    if synced.get("active_story_id") in completed:
+        synced["active_story_id"] = None
+        synced["active_story_title"] = None
+        synced["retry_count"] = 0
+        synced["failed_story_id"] = None
+        synced["last_error"] = None
+        if synced.get("status") == "running":
+            synced["status"] = "open"
+    return synced
+
+
 def verify_story_progress(prd_path: Path, before_text: str, story_id: str) -> str | None:
     after_text = prd_path.read_text()
     if after_text == before_text:
@@ -690,7 +728,8 @@ def run_one_prd(
     append_progress(progress_path, f"validated {prd.path.name}")
 
     while True:
-        state = load_state(state_path)
+        state = sync_state_with_prd(prd, load_state(state_path))
+        write_state(state_path, state)
         try:
             story = select_next_story(prd, state)
         except RuntimeError as exc:

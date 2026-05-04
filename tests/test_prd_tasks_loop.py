@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import subprocess
 import tempfile
 import textwrap
@@ -197,6 +198,17 @@ def write_story_completion_bad_commit_agent(workspace: Path, name: str) -> Path:
     return write_agent(workspace, name, body)
 
 
+def mark_story_completed(prd: Path, story_id: str) -> None:
+    text = prd.read_text(encoding="utf-8")
+    pattern = re.compile(rf"(?ms)(^###\s+{re.escape(story_id)}:.*?)(?=^###\s+US-|\Z)")
+    match = pattern.search(text)
+    if not match:
+        raise AssertionError(f"missing story {story_id}")
+    block = match.group(1)
+    updated_block = re.sub(r"^(\s*-\s+\[) (\]\s+)", r"\1x\2", block, flags=re.MULTILINE)
+    prd.write_text(text[:match.start()] + updated_block + text[match.end():], encoding="utf-8")
+
+
 class PrdTasksLoopTests(unittest.TestCase):
     def make_workspace(self) -> Path:
         return Path(tempfile.mkdtemp(prefix="prd-tasks-loop-test."))
@@ -283,6 +295,57 @@ class PrdTasksLoopTests(unittest.TestCase):
         prd_text = prd.read_text()
         self.assertIn("- [x] The first step is complete.", prd_text)
         self.assertIn("- [x] The second step is complete.", prd_text)
+
+    def test_run_skips_story_already_completed_in_prd(self) -> None:
+        workspace = self.make_workspace()
+        prd = write_prd(workspace, "2026-04-30-104512-resume.md", "Resume")
+        mark_story_completed(prd, "US-001")
+        write_story_completion_agent(workspace, "success-agent")
+        result = self.run_script(workspace, "--agent=success-agent", str(prd))
+        self.assertNotIn("US-001 running", result.stdout)
+        self.assertNotIn("US-001 passed", result.stdout)
+        self.assertIn("US-002 running", result.stdout)
+        self.assertIn("US-002 passed", result.stdout)
+
+    def test_run_synchronizes_existing_runtime_state_with_prd_progress(self) -> None:
+        workspace = self.make_workspace()
+        prd = write_prd(workspace, "2026-04-30-104512-sync-state.md", "Sync State")
+        mark_story_completed(prd, "US-001")
+        state_path = prd.with_suffix(".json.log")
+        progress_path = prd.with_suffix(".progress.log")
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        progress_path.write_text("", encoding="utf-8")
+        state_path.write_text(
+            json.dumps(
+                {
+                    "formatVersion": 1,
+                    "prd_path": str(prd),
+                    "prd_id": prd.stem,
+                    "title": "Sync State",
+                    "status": "open",
+                    "active_story_id": None,
+                    "active_story_title": None,
+                    "retry_count": 0,
+                    "max_retries": 3,
+                    "timeout": "2h",
+                    "selected_agent": "success-agent",
+                    "created_at": "2026-05-04T00:00:00+00:00",
+                    "updated_at": "2026-05-04T00:00:00+00:00",
+                    "completed_story_ids": [],
+                    "failed_story_id": None,
+                    "last_error": None,
+                    "attempts": [],
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        write_story_completion_agent(workspace, "success-agent")
+        result = self.run_script(workspace, "--agent=success-agent", str(prd))
+        self.assertNotIn("US-001 running", result.stdout)
+        self.assertIn("US-002 running", result.stdout)
+        self.assertIn("US-002 passed", result.stdout)
 
     def test_custom_agent_overrides_preset(self) -> None:
         workspace = self.make_workspace()
