@@ -646,6 +646,24 @@ def verify_story_commit_subject(repo_root: Path, prd: PrdData, story: Story, rev
     return None
 
 
+def start_status_message(story_id: str, attempt: int, retries: int) -> str:
+    if attempt == 1:
+        return f"{story_id} running"
+    return f"{story_id} retry {attempt}/{retries}"
+
+
+def success_status_message(story_id: str, attempt: int, retries: int) -> str:
+    if attempt == 1:
+        return f"{story_id} passed"
+    return f"{story_id} passed ({attempt}/{retries})"
+
+
+def failure_status_message(story_id: str, attempt: int, retries: int, exit_code: int) -> str:
+    if attempt == 1:
+        return f"{story_id} failed (exit {exit_code})"
+    return f"{story_id} failed ({attempt}/{retries}, exit {exit_code})"
+
+
 def run_one_prd(
     args: argparse.Namespace,
     prd: PrdData,
@@ -711,7 +729,7 @@ def run_one_prd(
                 ignored_paths=[state_path, progress_path],
             )
             append_progress(progress_path, f"starting {story.story_id} attempt {attempt}/{args.retries} with command: {agent_command}")
-            status_line(f"{story.story_id} attempt {attempt}/{args.retries}")
+            status_line(start_status_message(story.story_id, attempt, args.retries))
 
             prompt = render_prompt(prd, story, state_path, progress_path, agent_command, preset)
             exit_code, output = run_agent_command(agent_command, prompt, timeout_seconds)
@@ -748,7 +766,7 @@ def run_one_prd(
                 state["last_error"] = None
                 write_state(state_path, state)
                 append_progress(progress_path, f"completed {story.story_id} on attempt {attempt}/{args.retries}")
-                status_line(f"{story.story_id} passed ({attempt}/{args.retries})")
+                status_line(success_status_message(story.story_id, attempt, args.retries))
                 break
 
             record_attempt(state, story.story_id, attempt, exit_code, "failure", output)
@@ -758,7 +776,14 @@ def run_one_prd(
             state["last_error"] = f"agent exit {exit_code}"
             write_state(state_path, state)
             append_progress(progress_path, f"failed {story.story_id} on attempt {attempt}/{args.retries} with exit {exit_code}")
-            status_line(f"{story.story_id} failed ({attempt}/{args.retries}, exit {exit_code})")
+            status_line(
+                failure_status_message(
+                    story.story_id,
+                    attempt,
+                    args.retries,
+                    exit_code,
+                )
+            )
 
             if attempt < args.retries:
                 backoff = compute_backoff_seconds(attempt)

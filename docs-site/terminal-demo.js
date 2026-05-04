@@ -26,15 +26,15 @@ const frames = [
     delay: 950,
     lines: [
       "2026-05-04T07:38:53+00:00 Verifying tests and quality gates",
-      "2026-05-04T07:38:56+00:00 Acceptance criteria moved to done",
+      "2026-05-04T07:38:56+00:00 Acceptance criteria moved to done  OK",
     ],
   },
   {
     delay: 1000,
     lines: [
-      "2026-05-04T07:39:01+00:00 Story complete",
+      "2026-05-04T07:39:01+00:00 Story complete  ✅",
       "2026-05-04T07:39:01+00:00 Commit created with story and PRD references",
-      "2026-05-04T07:39:02+00:00 Loop ready for the next user story",
+      "2026-05-04T07:39:02+00:00 Loop ready for the next user story  🚀",
       "",
       "$ _",
     ],

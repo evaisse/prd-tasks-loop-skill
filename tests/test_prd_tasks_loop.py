@@ -274,8 +274,12 @@ class PrdTasksLoopTests(unittest.TestCase):
         progress_file = prd.with_suffix(".progress.log")
         self.assertFalse(state_file.exists())
         self.assertFalse(progress_file.exists())
-        self.assertIn("US-001 passed (1/3)", result.stdout)
-        self.assertIn("US-002 passed (1/3)", result.stdout)
+        self.assertIn("US-001 running", result.stdout)
+        self.assertIn("US-001 passed", result.stdout)
+        self.assertNotIn("US-001 passed (1/3)", result.stdout)
+        self.assertIn("US-002 running", result.stdout)
+        self.assertIn("US-002 passed", result.stdout)
+        self.assertNotIn("US-002 passed (1/3)", result.stdout)
         prd_text = prd.read_text()
         self.assertIn("- [x] The first step is complete.", prd_text)
         self.assertIn("- [x] The second step is complete.", prd_text)
@@ -302,9 +306,12 @@ class PrdTasksLoopTests(unittest.TestCase):
             str(prd),
             allow_failure=True,
         )
-        self.assertIn("US-001 failed (1/2, exit 124)", result.stdout)
+        self.assertIn("US-001 running", result.stdout)
+        self.assertIn("US-001 failed (exit 124)", result.stdout)
         self.assertIn("US-001 backing off 0s before retry", result.stdout)
         self.assertIn("US-001 retrying", result.stdout)
+        self.assertIn("US-001 retry 2/2", result.stdout)
+        self.assertIn("US-001 failed (2/2, exit 124)", result.stdout)
         self.assertIn("US-001 failed permanently", result.stdout)
         state = json.loads(prd.with_suffix(".json.log").read_text())
         self.assertEqual(state["status"], "failed")
@@ -349,7 +356,7 @@ class PrdTasksLoopTests(unittest.TestCase):
         write_story_completion_agent(workspace, "noop-agent", update_prd=False)
         result = self.run_script(workspace, "--agent=noop-agent", "--retries", "1", str(prd), allow_failure=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("US-001 failed (1/1, exit 65)", result.stdout)
+        self.assertIn("US-001 failed (exit 65)", result.stdout)
         self.assertIn("Failed after retries", result.stdout)
 
     def test_help_mentions_agent_and_multiple_prds(self) -> None:
@@ -419,7 +426,7 @@ class PrdTasksLoopTests(unittest.TestCase):
         self.init_git_repo(workspace)
         result = self.run_script(workspace, "--agent=success-agent", "--retries", "1", str(prd), allow_failure=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("US-001 failed (1/1, exit 66)", result.stdout)
+        self.assertIn("US-001 failed (exit 66)", result.stdout)
 
     def test_git_repo_accepts_story_commit(self) -> None:
         workspace = self.make_workspace()
@@ -427,7 +434,8 @@ class PrdTasksLoopTests(unittest.TestCase):
         write_story_completion_commit_agent(workspace, "commit-agent")
         self.init_git_repo(workspace)
         result = self.run_script(workspace, "--agent=commit-agent", str(prd))
-        self.assertIn("US-001 passed (1/3)", result.stdout)
+        self.assertIn("US-001 passed", result.stdout)
+        self.assertNotIn("US-001 passed (1/3)", result.stdout)
 
     def test_git_repo_rejects_story_commit_without_story_and_prd_refs(self) -> None:
         workspace = self.make_workspace()
@@ -443,7 +451,7 @@ class PrdTasksLoopTests(unittest.TestCase):
             allow_failure=True,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("US-001 failed (1/1, exit 67)", result.stdout)
+        self.assertIn("US-001 failed (exit 67)", result.stdout)
         self.assertIn("Failed after retries", result.stdout)
 
 
