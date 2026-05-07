@@ -11,6 +11,12 @@ It provides:
 - visible runtime logs beside each PRD
 - a generic agent prompt contract plus agent-specific invocation notes
 
+## Versioning
+
+- Released versions are tracked with Git tags such as `v0.1.0`.
+- User-facing changes to the skill should update [CHANGELOG.md](CHANGELOG.md) in the same change set as the code and docs.
+- New release tags should be created only after the changelog entry for that version is present.
+
 ## Workflow
 
 ```text
@@ -96,7 +102,7 @@ python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
 - `--agent=<preset-or-command>`
 - `--branch=<git-branch>`
 - `--retries <n>`
-- `--timeout <duration>`
+- `--timeout <duration>`: timeout per agent run attempt for one user story, not for the whole PRD or the whole loop
 - `--verbose`
 
 ## Notes

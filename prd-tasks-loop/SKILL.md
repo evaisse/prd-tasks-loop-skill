@@ -60,6 +60,7 @@ When the user needs execution:
 - do not edit `.json.log` or `.progress.log` files manually
 - expect an interactive confirmation before the loop starts
 - when running inside a Git repository, optionally use `--branch=<name>` to choose the branch before execution
+- when a change affects released skill behavior, update the repository `CHANGELOG.md` and keep version entries aligned with Git tags
 
 ## Public Script
 
@@ -172,6 +173,7 @@ Agents must:
 - commit the story-scoped changes after each successful story when running inside a Git repository
 - use a Conventional Commits subject that includes both the active `US-xxx` story ID and the attached PRD ID
 - never modify runtime logs directly
+- keep `CHANGELOG.md` current whenever they ship or prepare a versioned change to this skill
 
 ## References
 

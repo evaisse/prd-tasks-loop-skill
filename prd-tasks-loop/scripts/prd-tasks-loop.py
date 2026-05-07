@@ -856,7 +856,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("prds", nargs="*", help="PRD paths processed in order")
     parser.add_argument("--branch", default="", help="Git branch to checkout before starting the loop")
     parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
-    parser.add_argument("--timeout", default=DEFAULT_TIMEOUT_RAW)
+    parser.add_argument(
+        "--timeout",
+        default=DEFAULT_TIMEOUT_RAW,
+        help=(
+            "Timeout per agent run attempt for a single user story. "
+            "It is not a timeout for the whole PRD or the whole loop."
+        ),
+    )
     parser.add_argument(
         "--agent",
         default="codex",
