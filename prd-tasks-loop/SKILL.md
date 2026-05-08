@@ -131,6 +131,8 @@ Validation rules:
 - every story must define `Description`, `Acceptance Criteria`, `TDD Plan`, `Dependencies`, and `Parallel Group`
 - `Acceptance Criteria` must contain at least one bullet
 - `TDD Plan` must contain both `- Test:` and `- Implementation:`
+- `Dependencies` only support story IDs inside the same PRD, for example `US-001`
+- do not use PRD filenames or cross-PRD references in `Dependencies`; the runner will treat them as unresolved forever
 
 ## Execution Settings
 

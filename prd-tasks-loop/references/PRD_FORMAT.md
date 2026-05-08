@@ -97,6 +97,8 @@ Validation rules:
 - `Acceptance Criteria` must contain markdown checkbox bullets such as `- [ ] ...`
 - `TDD Plan` must contain both `- Test:` and `- Implementation:`
 - `TDD Plan` should be written in TDD-first order: the test step should describe the failing test to add before implementation
+- `Dependencies` currently support only user-story IDs from the same PRD, such as `US-001`
+- do not put PRD filenames or cross-PRD references in `Dependencies`; document those ordering needs elsewhere in the PRD text
 
 ## Canonical Example
 

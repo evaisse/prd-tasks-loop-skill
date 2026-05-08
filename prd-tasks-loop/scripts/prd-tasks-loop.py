@@ -7,6 +7,13 @@ https://github.com/snarktank/ralph
 This implementation is a simplified Python runner focused on canonical PRDs,
 visible state logs, positional PRD arguments, retry backoff, and automatic
 macOS caffeinate support.
+
+Dependency model:
+- `**Dependencies:**` inside a story currently supports only intra-PRD user
+  story identifiers such as `US-001, US-002`.
+- Cross-PRD file dependencies are not resolved by the runner.
+- When all remaining stories depend on unresolved story IDs, the PRD is marked
+  as blocked and the progress log records the missing dependencies.
 """
 
 from __future__ import annotations
@@ -571,12 +578,21 @@ def select_next_story(prd: PrdData, state: dict) -> Story | None:
     completed = set(state.get("completed_story_ids", []))
     if len(completed) == len(prd.stories):
         return None
+    blocked: list[str] = []
     for story in prd.stories:
         if story.story_id in completed:
             continue
         if all(dep in completed for dep in story.dependencies):
             return story
-    raise RuntimeError("Blocked by unresolved dependencies")
+        missing = [dep for dep in story.dependencies if dep not in completed]
+        if missing:
+            blocked.append(f"{story.story_id} -> missing {', '.join(missing)}")
+    detail = "; ".join(blocked) if blocked else "no runnable story could be selected"
+    raise RuntimeError(
+        "Blocked by unresolved dependencies. "
+        "Dependencies currently support only story IDs within the same PRD "
+        f"(for example `US-001`). Remaining blockers: {detail}"
+    )
 
 
 def record_attempt(state: dict, story_id: str, attempt: int, exit_code: int, result: str, output: str) -> None:
@@ -738,6 +754,7 @@ def run_one_prd(
             write_state(state_path, state)
             append_progress(progress_path, "failed because remaining stories are blocked by dependencies")
             status_line(f"Blocked by dependencies: {prd.path}")
+            print(f"  - {exc}")
             return False
 
         if story is None:

@@ -4,6 +4,17 @@ All notable changes to this skill are documented in this file.
 
 The format is based on Keep a Changelog and this repository uses Git tags for released versions.
 
+## [v0.1.1] - 2026-05-08
+
+### Fixed
+
+- Improved blocked-dependency diagnostics so the runner prints the unresolved story IDs instead of only showing the PRD path.
+
+### Documentation
+
+- Clarified that `Dependencies` only support story IDs from the same PRD, such as `US-001`.
+- Clarified that cross-PRD filenames or references are not resolved by the runner and will keep the remaining stories blocked.
+
 ## [v0.1.0] - 2026-05-07
 
 ### Added

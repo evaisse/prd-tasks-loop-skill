@@ -116,6 +116,8 @@ python3 prd-tasks-loop/scripts/prd-tasks-loop.py \
 - Before starting, the runner shows the PRDs that will be processed and asks for confirmation.
 - In a Git repository, the startup prompt shows the current branch and optional `--branch=...` target.
 - Outside a Git repository, the startup prompt only asks for confirmation that the loop should run without Git support.
+- `**Dependencies:**` currently supports only story IDs from the same PRD, such as `US-001`.
+- `Blocked by dependencies` means that no remaining incomplete story can run with the set of completed stories currently detected from the PRD and runtime state.
 - When the worktree starts clean inside a Git repository, a successful story is expected to produce a new commit.
 - Story commits should use Conventional Commits and include both the active `US-xxx` identifier and the attached PRD ID.
 - Agents should never modify `.json.log` or `.progress.log` directly.
