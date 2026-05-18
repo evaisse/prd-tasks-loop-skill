@@ -15,19 +15,19 @@
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">PRD Tasks Loop</p>
-          <h1>Story-scoped execution, shown like a terminal run.</h1>
+          <h1>PRDs that leave operational evidence.</h1>
           <p class="lede">
-            Write a canonical PRD, run one active user story at a time, and verify that the agent
-            updates the PRD, commits cleanly, and leaves visible runtime proof while it works.
+            The runner executes one runnable <code>US-xxx</code> story at a time, rejects
+            incomplete agent runs, and records enough state to resume or debug the loop.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="https://github.com/evaisse/prd-tasks-loop-skill">View repository</a>
             <a class="button button-secondary" href="https://github.com/evaisse/prd-tasks-loop-skill/tree/main/prd-tasks-loop">Open the skill</a>
           </div>
           <ul class="facts">
-            <li>Canonical PRDs under <code>docs/prd/</code></li>
-            <li>One prompt per active <code>US-xxx</code></li>
-            <li>Visible progress logs and commit discipline</li>
+            <li>Auto-discovers canonical PRDs under <code>docs/prd/</code></li>
+            <li>Renders one focused prompt for the active story</li>
+            <li>Requires PRD checkbox progress and Git commit proof</li>
           </ul>
         </div>
 
@@ -44,6 +44,88 @@
             <pre class="terminal-screen" id="terminal-screen"></pre>
           </div>
         </section>
+      </section>
+
+      <section class="docs-intro" aria-labelledby="outputs-title">
+        <p class="eyebrow">Observed outputs</p>
+        <h2 id="outputs-title">What the tests prove the loop emits</h2>
+        <p>
+          These examples mirror the runner and fixtures covered by
+          <code>tests/test_prd_tasks_loop.py</code> and the real-agent E2E harness.
+        </p>
+      </section>
+
+      <section class="docs-grid" aria-label="Runner output reference">
+        <article class="doc-panel doc-panel-wide">
+          <h3>Happy path terminal output</h3>
+          <p>
+            A successful PRD prints the PRD index, starts each runnable story, marks each
+            story as passed, then reports completion. Runtime logs are cleaned after all
+            stories complete.
+          </p>
+          <pre class="output-block"><code>$ python3 prd-tasks-loop/scripts/prd-tasks-loop.py --agent=codex docs/prd/2026-04-30-104512-happy-path.md
+2026-05-04T07:38:48+00:00 1/1 2026-04-30-104512-happy-path.md
+2026-05-04T07:38:48+00:00 US-001 running
+2026-05-04T07:38:56+00:00 US-001 passed
+2026-05-04T07:38:56+00:00 US-002 running
+2026-05-04T07:39:03+00:00 US-002 passed
+2026-05-04T07:39:03+00:00 Completed: /workspace/docs/prd/2026-04-30-104512-happy-path.md</code></pre>
+        </article>
+
+        <article class="doc-panel">
+          <h3>Runtime state beside the PRD</h3>
+          <p>
+            While a PRD is open, the loop writes visible files next to the Markdown PRD.
+            Agents are instructed to read them and never edit them manually.
+          </p>
+          <ul class="doc-list">
+            <li><code>*.json.log</code> stores status, active story, retry count, selected agent, and attempt excerpts.</li>
+            <li><code>*.progress.log</code> records timestamped events such as validation, attempts, backoff, and completion.</li>
+            <li>Both files are removed automatically after the PRD reaches <code>Completed:</code>.</li>
+          </ul>
+        </article>
+
+        <article class="doc-panel">
+          <h3>Validation and discovery</h3>
+          <p>
+            With no positional PRDs, only canonical filenames are discovered. Explicit files
+            still get full validation, including required sections and story fields.
+          </p>
+          <pre class="output-block"><code>Error: No PRD files found.
+Invalid PRD filename `wrong-name.md`
+Missing required section `## Goals`.</code></pre>
+        </article>
+
+        <article class="doc-panel">
+          <h3>Story verification</h3>
+          <p>
+            A zero exit code is not enough. The runner verifies that the current story
+            advanced its acceptance checkboxes and, in a clean Git repository, created a
+            Conventional Commit containing both the story ID and PRD ID.
+          </p>
+          <ul class="doc-list">
+            <li><code>exit 65</code>: the PRD file or current story checkboxes did not advance.</li>
+            <li><code>exit 66</code>: no new story commit was created from a clean worktree.</li>
+            <li><code>exit 67</code>: the story commit subject is missing the required format or references.</li>
+          </ul>
+        </article>
+
+        <article class="doc-panel">
+          <h3>Retries and blocked work</h3>
+          <p>
+            Failed attempts are written into state and progress logs. The loop retries with
+            backoff, then stops the current PRD when retries are exhausted or dependencies
+            leave no runnable story.
+          </p>
+          <pre class="output-block"><code>2026-05-04T07:40:00+00:00 US-001 failed (exit 124)
+2026-05-04T07:40:00+00:00 US-001 backing off 0s before retry
+2026-05-04T07:40:00+00:00 US-001 retrying
+2026-05-04T07:40:01+00:00 US-001 retry 2/2
+2026-05-04T07:40:02+00:00 US-001 failed (2/2, exit 124)
+2026-05-04T07:40:02+00:00 US-001 failed permanently
+2026-05-04T07:40:02+00:00 Failed after retries: /workspace/docs/prd/2026-04-30-104512-timeout-case.md (US-001)
+2026-05-04T07:41:00+00:00 Blocked by dependencies: /workspace/docs/prd/2026-04-30-104512-blocked.md</code></pre>
+        </article>
       </section>
     </main>
 

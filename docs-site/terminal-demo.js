@@ -4,38 +4,50 @@ const frames = [
   {
     delay: 600,
     lines: [
-      "$ python3 prd-tasks-loop/scripts/prd-tasks-loop.py --agent=codex docs/prd/2026-04-30-104512-jwt-authentication.md",
+      "$ python3 prd-tasks-loop/scripts/prd-tasks-loop.py --agent=codex docs/prd/2026-04-30-104512-happy-path.md",
       "",
     ],
   },
   {
     delay: 850,
     lines: [
-      "2026-05-04T07:38:48+00:00 Opening PRD: jwt-authentication",
-      "2026-05-04T07:38:48+00:00 Active story: US-001 Reject missing tokens",
+      "2026-05-04T07:38:48+00:00 1/1 2026-04-30-104512-happy-path.md",
+      "2026-05-04T07:38:48+00:00 US-001 running",
     ],
   },
   {
     delay: 900,
     lines: [
-      "2026-05-04T07:38:49+00:00 Rendering a focused prompt for one story",
-      "2026-05-04T07:38:50+00:00 Agent writes the change and updates the PRD",
+      "2026-05-04T07:38:56+00:00 US-001 passed",
+      "2026-05-04T07:38:56+00:00 US-002 running",
     ],
   },
   {
     delay: 950,
     lines: [
-      "2026-05-04T07:38:53+00:00 Verifying tests and quality gates",
-      "2026-05-04T07:38:56+00:00 Acceptance criteria moved to done  OK",
+      "2026-05-04T07:39:03+00:00 US-002 passed",
+      "2026-05-04T07:39:03+00:00 Completed: /workspace/docs/prd/2026-04-30-104512-happy-path.md",
+      "# success removes .json.log and .progress.log",
+      "",
     ],
   },
   {
-    delay: 1000,
+    delay: 900,
     lines: [
-      "2026-05-04T07:39:01+00:00 Story complete  ✅",
-      "2026-05-04T07:39:01+00:00 Commit created with story and PRD references",
-      "2026-05-04T07:39:02+00:00 Loop ready for the next user story  🚀",
+      "$ python3 prd-tasks-loop/scripts/prd-tasks-loop.py --agent=sleep-agent --timeout 1s --retries 2 docs/prd/2026-04-30-104512-timeout-case.md",
       "",
+      "2026-05-04T07:40:00+00:00 US-001 running",
+      "2026-05-04T07:40:00+00:00 US-001 failed (exit 124)",
+    ],
+  },
+  {
+    delay: 900,
+    lines: [
+      "2026-05-04T07:40:00+00:00 US-001 backing off 0s before retry",
+      "2026-05-04T07:40:00+00:00 US-001 retrying",
+      "2026-05-04T07:40:01+00:00 US-001 retry 2/2",
+      "2026-05-04T07:40:02+00:00 US-001 failed (2/2, exit 124)",
+      "2026-05-04T07:40:02+00:00 US-001 failed permanently",
       "$ _",
     ],
   },
