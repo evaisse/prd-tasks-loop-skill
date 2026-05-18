@@ -1,15 +1,20 @@
 # prd-tasks-loop
 
-`prd-tasks-loop` is a Codex skill repo that combines PRD authoring and PRD execution (a.k.a. [Ralph Loop](https://ghuntley.com/ralph/)) into one workflow.
+`prd-tasks-loop` is a skill that combines PRD authoring and PRD execution (a.k.a. [Ralph Loop](https://ghuntley.com/ralph/)) into one workflow. It's tailored to be activated with differents agents (codex, claude, any stdin compatible agent...).
 
-The skill itself lives under `./prd-tasks-loop/`.
+```bash
+# install
+npx skills add evaisse/prd-tasks-loop-skill
+```
 
 It provides:
 
-- a canonical Markdown PRD format
-- a script (python) loop runner for executing PRDs
+- a canonical Markdown PRD format and validation tools
+- a script (python) loop runner for executing PRDs, with timeout/duration, budget, and retry limit
 - visible runtime logs beside each PRD
 - a generic agent prompt contract plus agent-specific invocation notes
+
+The skill source itself lives under [`./prd-tasks-loop/SKILL.md`](./prd-tasks-loop/SKILL.md) with a bundled loop script in [`./prd-tasks-loop/scripts/prd-tasks-loop.py`](./prd-tasks-loop/scripts/prd-tasks-loop.py).
 
 ## Versioning
 
