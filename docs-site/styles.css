@@ -49,6 +49,43 @@ body::before {
   padding: 1.25rem 0 3rem;
 }
 
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.site-mark,
+.repo-link {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.site-mark {
+  font-weight: 700;
+}
+
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 0.9rem;
+  transition: border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.repo-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
@@ -366,6 +403,11 @@ code {
 @media (max-width: 560px) {
   .page-shell {
     width: min(100% - 0.75rem, 1180px);
+  }
+
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .hero,
